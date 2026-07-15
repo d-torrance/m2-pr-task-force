@@ -38,21 +38,26 @@ const state = { sort: "number", dir: -1, wsort: "mine", wdir: -1, q: "", label: 
 /* ---------------------------------- PR table ---------------------------------- */
 
 function reviewerSpan(r) {
-  // Two visual states by design: yours reads as ink, everyone else's recedes to muted.
-  // The distinction between "someone else assigned them" and "they volunteered" is real
-  // but secondary -- it lives in the tooltip rather than adding a third visual weight.
-  const mine = r.origin === "mine";
-  const n = el("span", `rv ${mine ? "rv-mine" : "rv-other"}`);
+  // Two visual states by design: the assigner's picks read as ink, everyone else's recede.
+  // The distinction between "someone else assigned them" and "they volunteered" is real but
+  // secondary -- it lives in the tooltip rather than adding a third visual weight.
+  //
+  // Bots are never bold whoever requested them: emphasis is meant to pick out the humans
+  // carrying review load. They also skip the dot, which specifically means "assigned by
+  // someone else" and would be a lie for a bot the assigner requested.
+  const kind = r.isBot ? "machine" : r.origin === "mine" ? "mine" : "other";
+  const n = el("span", `rv rv-${kind}`);
   n.append(el("span", "rv-name", r.login));
   if (r.isBot) n.append(el("span", "rv-bot", "bot"));
   if (r.state !== "PENDING") {
     n.append(el("span", `badge ${STATE_CLASS[r.state] ?? "st-mute"}`, STATE_LABEL[r.state] ?? r.state));
   }
-  n.title = mine
-    ? `You requested ${r.login}`
-    : r.origin === "other"
-      ? `Requested by ${r.assignedBy} — not one of your task force selections`
-      : `${r.login} reviewed without being requested — not one of your task force selections`;
+  n.title =
+    r.origin === "mine"
+      ? `${DATA.assigner} requested ${r.login}`
+      : r.origin === "other"
+        ? `Requested by ${r.assignedBy} — not one of ${DATA.assigner}'s task force selections`
+        : `${r.login} reviewed without being requested — not one of ${DATA.assigner}'s task force selections`;
   return n;
 }
 
@@ -167,12 +172,7 @@ function drawWorkload() {
   body.replaceChildren(
     ...rows.map((r) => {
       const tr = el("tr");
-      if (r.login === DATA.assigner) tr.className = "is-you";
-
-      const name = el("td", "w-name");
-      name.append(el("span", null, r.login));
-      if (r.login === DATA.assigner) name.append(el("span", "you", "you"));
-
+      const name = el("td", "w-name", r.login);
       const mine = el("td", "w-mine");
       const bar = el("div", "bar");
       const fill = el("div", "bar-fill");
@@ -211,8 +211,13 @@ function fillSelect(sel, items, allLabel) {
 function init() {
   $("#repo").textContent = DATA.repo;
   $("#repo").href = `https://github.com/${DATA.repo}`;
-  $("#assigner").textContent = DATA.assigner;
   document.title = `${DATA.repo} PR Task Force`;
+
+  // This page is public, so it names the assigner rather than addressing a "you" that most
+  // readers aren't. The name comes from the data, since TASK_FORCE_ASSIGNER is configurable.
+  for (const n of document.querySelectorAll(".who")) n.textContent = DATA.assigner;
+  $("#f-mine").querySelector('[value="mine"]').textContent = `Assigned by ${DATA.assigner}`;
+  $("#f-mine").querySelector('[value="notmine"]').textContent = `Not assigned by ${DATA.assigner}`;
 
   const s = DATA.stats;
   $("#kpi-prs").textContent = s.prs;

@@ -111,12 +111,14 @@ tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transp
 }
 .chip-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px var(--border) inset; }
 
-/* Two states by design: yours is ink, everyone else's recedes. */
+/* Two states by design: the assigner's picks are ink, everyone else's recede. Bots recede
+   too, whoever requested them -- bold is for the humans carrying load. */
 .rv { display: inline-flex; align-items: center; gap: 4px; margin: 1px 8px 1px 0; white-space: nowrap; }
 .rv-mine .rv-name { color: var(--text-primary); font-weight: 620; }
-.rv-other .rv-name { color: var(--text-muted); font-weight: 400; }
-/* A leading dot carries "not yours" a second time, so the distinction survives greyscale,
-   print, and CVD rather than resting on weight and color alone. NBSP: a plain space collapses. */
+.rv-other .rv-name, .rv-machine .rv-name { color: var(--text-muted); font-weight: 400; }
+/* A leading dot carries "assigned by someone else" a second time, so the distinction survives
+   greyscale, print, and CVD rather than resting on weight and color alone. It is deliberately
+   absent on bots, whom the assigner may well have requested. NBSP: a plain space collapses. */
 .rv-other .rv-name::before { content: "\\00b7\\00a0"; }
 .rv-bot {
   font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em;
@@ -130,10 +132,6 @@ tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transp
 .none { color: var(--text-muted); font-style: italic; font-size: 12px; }
 
 .w-name { white-space: nowrap; }
-.you {
-  margin-left: 6px; font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em;
-  color: var(--accent-ink); border: 1px solid currentColor; border-radius: 3px; padding: 0 3px;
-}
 .w-mine { display: flex; align-items: center; gap: 10px; }
 .w-mine .num { min-width: 1.5em; }
 /* A bar chart, not a meter: no track. Zero must render as nothing, or an idle reviewer
@@ -176,13 +174,13 @@ export function render(data) {
 <header>
   <h1>PR Task Force</h1>
   <p class="sub">Open non-draft pull requests on <a id="repo" rel="noopener">…</a>, and who
-     <span id="assigner">…</span> put on them.</p>
+     <span class="who">…</span> put on them.</p>
 </header>
 
 <div class="kpis">
   <div class="kpi"><div class="v num" id="kpi-prs">–</div><div class="k">open non-draft PRs</div></div>
-  <div class="kpi"><div class="v num" id="kpi-mine">–</div><div class="k">awaiting review — you assigned</div></div>
-  <div class="kpi"><div class="v num" id="kpi-other">–</div><div class="k">awaiting review — others assigned</div></div>
+  <div class="kpi"><div class="v num" id="kpi-mine">–</div><div class="k">awaiting review — assigned by <span class="who">…</span></div></div>
+  <div class="kpi"><div class="v num" id="kpi-other">–</div><div class="k">awaiting review — assigned by others</div></div>
   <div class="kpi flag">
     <div class="v num" id="kpi-nohook">–</div>
     <div class="k">nobody on the hook <span class="k2" id="kpi-nohook-note"></span></div>
@@ -191,27 +189,9 @@ export function render(data) {
 
 <section>
   <div class="head">
-    <h2>Reviewer workload</h2>
-    <span class="note">outstanding requests, by who made them · reviews volunteered without a request</span>
-  </div>
-  <div class="scroll">
-    <table id="w-table">
-      <thead><tr>
-        <th data-wsort="reviewer">Reviewer</th>
-        <th data-wsort="mine">Assigned by you</th>
-        <th data-wsort="other">By others</th>
-        <th data-wsort="volunteer">Volunteered</th>
-      </tr></thead>
-      <tbody id="w-body"></tbody>
-    </table>
-  </div>
-</section>
-
-<section>
-  <div class="head">
     <h2>Pull requests</h2>
     <span class="note" id="pr-count"></span>
-    <span class="legend"><span><b>bold</b> = you assigned</span><span>· grey = someone else</span></span>
+    <span class="legend"><span><b>bold</b> = assigned by <span class="who">…</span></span><span>· grey = anyone else</span></span>
   </div>
   <div class="filters">
     <input id="f-q" type="search" placeholder="Search number, title, author…" aria-label="Search pull requests">
@@ -219,8 +199,8 @@ export function render(data) {
     <select id="f-reviewer" aria-label="Filter by reviewer"></select>
     <select id="f-mine" aria-label="Filter by assignment">
       <option value="all">Any assignment</option>
-      <option value="mine">Has one of my selections</option>
-      <option value="notmine">None of my selections</option>
+      <option value="mine">Assigned by …</option>
+      <option value="notmine">Not assigned by …</option>
       <option value="nohook">Nobody on the hook</option>
       <option value="unassigned">No reviewer at all</option>
     </select>
@@ -241,6 +221,24 @@ export function render(data) {
     </table>
   </div>
   <div class="empty" id="pr-empty" hidden>No pull requests match these filters.</div>
+</section>
+
+<section>
+  <div class="head">
+    <h2>Reviewer workload</h2>
+    <span class="note">outstanding requests, by who made them · reviews volunteered without a request</span>
+  </div>
+  <div class="scroll">
+    <table id="w-table">
+      <thead><tr>
+        <th data-wsort="reviewer">Reviewer</th>
+        <th data-wsort="mine">Assigned by <span class="who">…</span></th>
+        <th data-wsort="other">By others</th>
+        <th data-wsort="volunteer">Volunteered</th>
+      </tr></thead>
+      <tbody id="w-body"></tbody>
+    </table>
+  </div>
 </section>
 
 <footer>

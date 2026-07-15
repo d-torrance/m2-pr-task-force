@@ -1,7 +1,7 @@
 # M2 PR Task Force
 
 A dashboard of open, non-draft pull requests on [Macaulay2/M2][m2] — who wrote them, what
-they're labelled, and **who you put on them** — plus a reviewer workload table for spreading
+they're labelled, and **who the task force put on them** — plus a reviewer workload table for spreading
 review load around.
 
 Published daily to GitHub Pages. Run `npm start` any time to regenerate it locally.
@@ -18,13 +18,17 @@ origins:
 
 | Origin | Meaning | Can it be pending? |
 |---|---|---|
-| **mine** | you requested this review — a task force selection | yes |
+| **mine** | the assigner requested this review — a task force selection | yes |
 | **other** | somebody else requested it | yes |
 | **volunteer** | nobody ever requested them; they reviewed anyway | no — nothing was ever asked |
 
-The PR table shows **two** visual states, because triage only asks one question: **bold** is
-yours, grey is everyone else's (hover any name for who requested it). The workload table keeps
-all three apart, because load-balancing needs the detail.
+The PR table shows **two** visual states, because triage only asks one question: **bold** is a
+task force selection, grey is anyone else's (hover any name for who requested it). Bots are
+never bold whoever requested them — emphasis is for the humans carrying load. The workload
+table keeps all three origins apart, because load-balancing needs the detail.
+
+The page is public, so it names the assigner throughout rather than addressing a "you" that
+most readers aren't.
 
 ## The two gap numbers
 
