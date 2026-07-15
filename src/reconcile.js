@@ -14,7 +14,7 @@ export function loginOf(actor) {
 /**
  * Replay a PR's review-request events to find who currently owns each assignment.
  * Chronological, last write wins; a removal clears the assignment entirely.
- * @returns Map<reviewerLogin, actorLogin|null>
+ * @returns Map<reviewerLogin, {actor: string|null, at: string}>
  */
 export function replayAssignments(timelineNodes) {
   const assigner = new Map();
@@ -23,7 +23,7 @@ export function replayAssignments(timelineNodes) {
     const reviewer = loginOf(e.requestedReviewer);
     if (!reviewer) continue;
     if (e.__typename === "ReviewRequestedEvent") {
-      assigner.set(reviewer, loginOf(e.actor));
+      assigner.set(reviewer, { actor: loginOf(e.actor), at: e.createdAt });
     } else {
       assigner.delete(reviewer);
     }
@@ -32,17 +32,23 @@ export function replayAssignments(timelineNodes) {
 }
 
 // Three origins, and they are genuinely different things:
-//   mine      - you requested this review (your task force selection)
-//   other     - somebody else requested it
+//   mine      - a task force selection: the assigner requested it, on or after the start date
+//   other     - somebody else requested it, OR the assigner did before the task force existed
 //   volunteer - nobody ever requested them; they reviewed on their own initiative
 // A volunteer is never PENDING -- with no request outstanding, there is nothing to wait on.
-function originOf(assigner, reviewer, me) {
-  if (!assigner.has(reviewer)) return "volunteer";
-  return assigner.get(reviewer) === me ? "mine" : "other";
+//
+// The start date matters: the assigner has been requesting reviews as ordinary maintainer work
+// for years, and without a cutoff that history is indistinguishable from the task force -- it
+// would have claimed 8 merged PRs for an effort that had produced 2. `at` is an ISO timestamp
+// and `start` an ISO date, so a lexical >= includes everything on the start day.
+function originOf(assigner, reviewer, me, start) {
+  const a = assigner.get(reviewer);
+  if (!a) return "volunteer";
+  return a.actor === me && (!start || a.at >= start) ? "mine" : "other";
 }
 
-/** One PR's reviewers, each resolved to {origin, state}. Sorted with yours first. */
-function reviewersFor(pr, me) {
+/** One PR's reviewers, each resolved to {origin, state}. Task force picks sort first. */
+function reviewersFor(pr, me, start) {
   const assigner = replayAssignments(pr.timelineItems.nodes);
 
   const pending = new Map();
@@ -62,11 +68,13 @@ function reviewersFor(pr, me) {
     const actor = pending.get(login) ?? reviewed.get(login).author;
     // Pending wins over a past review: a re-request after a review means they owe another look.
     const state = pending.has(login) ? "PENDING" : reviewed.get(login).state;
+    const a = assigner.get(login);
     reviewers.push({
       login,
       state,
-      origin: originOf(assigner, login, me),
-      assignedBy: assigner.get(login) ?? null,
+      origin: originOf(assigner, login, me, start),
+      assignedBy: a?.actor ?? null,
+      assignedAt: a?.at ?? null,
       isBot: actor.__typename === "Bot",
       isTeam: actor.__typename === "Team",
     });
@@ -111,28 +119,54 @@ function workloadFrom(prs) {
   );
 }
 
-/** Raw API nodes -> the full data model baked into the page. */
-export function reconcile(rawPrs, { me, repo, generatedAt = new Date().toISOString() }) {
+/**
+ * Approvals per reviewer on merged PRs -- what the review effort actually delivered.
+ * `mine` is the subset the assigner had requested, which is the task force's own output as
+ * distinct from approvals that would have happened anyway.
+ *
+ * Everyone who reviewed a merged PR gets a row, including reviewers who only ever commented
+ * (approved: 0). They engaged with the PR, so dropping them would misrepresent who is active.
+ * Bots are excluded, as in the open workload.
+ */
+function approvalsFrom(prs) {
+  const byLogin = new Map();
+  for (const pr of prs) {
+    for (const r of pr.reviewers) {
+      if (r.isBot) continue;
+      if (!byLogin.has(r.login)) byLogin.set(r.login, { login: r.login, approved: 0, mine: 0 });
+      if (r.state !== "APPROVED") continue;
+      const row = byLogin.get(r.login);
+      row.approved += 1;
+      if (r.origin === "mine") row.mine += 1;
+    }
+  }
+  return [...byLogin.values()].sort(
+    (a, b) => b.approved - a.approved || b.mine - a.mine || a.login.localeCompare(b.login),
+  );
+}
+
+const shape = (pr, me, start) => ({
+  number: pr.number,
+  title: pr.title,
+  url: pr.url,
+  author: loginOf(pr.author) ?? "(ghost)",
+  createdAt: pr.createdAt,
+  updatedAt: pr.updatedAt,
+  mergedAt: pr.mergedAt ?? null,
+  labels: pr.labels.nodes.map((l) => ({ name: l.name, color: l.color })),
+  reviewers: reviewersFor(pr, me, start),
+});
+
+/** Open PRs -> table rows, pending workload, and the two gap numbers. */
+function reconcileOpen(rawPrs, me, start) {
   const prs = rawPrs
     .filter((pr) => !pr.isDraft)
-    .map((pr) => ({
-      number: pr.number,
-      title: pr.title,
-      url: pr.url,
-      author: loginOf(pr.author) ?? "(ghost)",
-      createdAt: pr.createdAt,
-      updatedAt: pr.updatedAt,
-      labels: pr.labels.nodes.map((l) => ({ name: l.name, color: l.color })),
-      reviewers: reviewersFor(pr, me),
-    }))
+    .map((pr) => shape(pr, me, start))
     .sort((a, b) => b.number - a.number);
 
   const pending = prs.flatMap((p) => p.reviewers).filter((r) => r.state === "PENDING");
 
   return {
-    generatedAt,
-    repo,
-    assigner: me,
     prs,
     workload: workloadFrom(prs),
     stats: {
@@ -145,5 +179,47 @@ export function reconcile(rawPrs, { me, repo, generatedAt = new Date().toISOStri
       pending: pending.length,
       pendingMine: pending.filter((r) => r.origin === "mine").length,
     },
+  };
+}
+
+/** Merged PRs -> table rows and approval counts, newest merge first. */
+function reconcileMerged(rawPrs, me, start, { since, months }) {
+  const prs = rawPrs
+    .map((pr) => shape(pr, me, start))
+    .sort((a, b) => (a.mergedAt < b.mergedAt ? 1 : a.mergedAt > b.mergedAt ? -1 : b.number - a.number));
+
+  const approvals = approvalsFrom(prs);
+  const approved = prs.filter((p) => p.reviewers.some((r) => r.state === "APPROVED"));
+
+  return {
+    since,
+    months,
+    prs,
+    approvals,
+    stats: {
+      prs: prs.length,
+      approved: approved.length,
+      // A merged PR nobody approved. Common on M2 and not inherently wrong -- it is the
+      // baseline the task force exists to move.
+      unapproved: prs.length - approved.length,
+      // Merges carrying an approval from someone the assigner put there: the task force's
+      // actual output. Expect this to be tiny until a full window post-dates the effort.
+      taskForce: prs.filter((p) => p.reviewers.some((r) => r.state === "APPROVED" && r.origin === "mine")).length,
+    },
+  };
+}
+
+/** Raw API nodes -> the full data model baked into the page. */
+export function reconcile(
+  { open: rawOpen, merged: rawMerged = [], since = null, months = 3 },
+  { me, repo, start = null, generatedAt = new Date().toISOString() },
+) {
+  return {
+    generatedAt,
+    repo,
+    assigner: me,
+    taskForceStart: start,
+    open: reconcileOpen(rawOpen, me, start),
+    merged: reconcileMerged(rawMerged, me, start, { since, months }),
   };
 }

@@ -61,8 +61,22 @@ header h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: -0.01em; }
 header p { margin: 0; color: var(--text-secondary); }
 .sub { font-size: 13px; }
 
+.tabs { display: flex; gap: 4px; margin: 20px 0 0; border-bottom: 1px solid var(--grid); }
+.tabs button {
+  background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  padding: 8px 14px; margin-bottom: -1px; font-size: 14px; font-weight: 600;
+  color: var(--text-muted); cursor: pointer;
+}
+.tabs button:hover { color: var(--text-primary); }
+.tabs button[aria-selected="true"] { color: var(--text-primary); border-bottom-color: var(--series-1); }
+.tabn {
+  margin-left: 6px; padding: 0 6px; border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-secondary);
+}
+
 /* KPI row -- headline numbers are stat tiles, not a one-bar chart. */
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 24px 0 32px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 20px 0 24px; }
 .kpi { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
 .kpi .v { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.1; }
 .kpi .k { color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
@@ -140,6 +154,8 @@ tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transp
 .bar-fill { height: 100%; background: var(--series-1); border-radius: 4px; min-width: 0; }
 #w-table td { border-bottom: 1px solid var(--grid); }
 #w-table th:not(:first-child), #w-table td:not(:first-child) { width: 22%; }
+#a-table td { border-bottom: 1px solid var(--grid); }
+#a-table th:not(:first-child), #a-table td:not(:first-child) { width: 28%; }
 
 .filters { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--grid); }
 input, select, button {
@@ -173,73 +189,142 @@ export function render(data) {
 
 <header>
   <h1>PR Task Force</h1>
-  <p class="sub">Open non-draft pull requests on <a id="repo" rel="noopener">…</a>, and who
-     <span class="who">…</span> put on them.</p>
+  <p class="sub">Pull requests on <a id="repo" rel="noopener">…</a>, and who
+     <span class="who">…</span> put on them. A <b>task force selection</b> is a review
+     <span class="who">…</span> requested since <span id="tf-start">…</span>.</p>
 </header>
 
-<div class="kpis">
-  <div class="kpi"><div class="v num" id="kpi-prs">–</div><div class="k">open non-draft PRs</div></div>
-  <div class="kpi"><div class="v num" id="kpi-mine">–</div><div class="k">awaiting review — assigned by <span class="who">…</span></div></div>
-  <div class="kpi"><div class="v num" id="kpi-other">–</div><div class="k">awaiting review — assigned by others</div></div>
-  <div class="kpi flag">
-    <div class="v num" id="kpi-nohook">–</div>
-    <div class="k">nobody on the hook <span class="k2" id="kpi-nohook-note"></span></div>
-  </div>
+<div class="tabs" role="tablist">
+  <button role="tab" data-tab="open" aria-controls="panel-open" aria-selected="true">Open <span class="tabn" id="tab-open-count">–</span></button>
+  <button role="tab" data-tab="merged" aria-controls="panel-merged" aria-selected="false">Merged <span class="tabn" id="tab-merged-count">–</span></button>
 </div>
 
-<section>
-  <div class="head">
-    <h2>Pull requests</h2>
-    <span class="note" id="pr-count"></span>
-    <span class="legend"><span><b>bold</b> = assigned by <span class="who">…</span></span><span>· grey = anyone else</span></span>
+<div id="panel-open" role="tabpanel">
+  <div class="kpis">
+    <div class="kpi"><div class="v num" id="kpi-prs">–</div><div class="k">open non-draft PRs</div></div>
+    <div class="kpi"><div class="v num" id="kpi-mine">–</div><div class="k">awaiting review — assigned by <span class="who">…</span></div></div>
+    <div class="kpi"><div class="v num" id="kpi-other">–</div><div class="k">awaiting review — assigned by others</div></div>
+    <div class="kpi flag">
+      <div class="v num" id="kpi-nohook">–</div>
+      <div class="k">nobody on the hook <span class="k2" id="kpi-nohook-note"></span></div>
+    </div>
   </div>
-  <div class="filters">
-    <input id="f-q" type="search" placeholder="Search number, title, author…" aria-label="Search pull requests">
-    <select id="f-label" aria-label="Filter by label"></select>
-    <select id="f-reviewer" aria-label="Filter by reviewer"></select>
-    <select id="f-mine" aria-label="Filter by assignment">
-      <option value="all">Any assignment</option>
-      <option value="mine">Assigned by …</option>
-      <option value="notmine">Not assigned by …</option>
-      <option value="nohook">Nobody on the hook</option>
-      <option value="unassigned">No reviewer at all</option>
-    </select>
-    <button id="f-reset" type="button">Reset</button>
-  </div>
-  <div class="scroll">
-    <table id="pr-table">
-      <thead><tr>
-        <th data-sort="number">PR</th>
-        <th data-sort="title">Title</th>
-        <th data-sort="author">Author</th>
-        <th data-sort="labels">Labels</th>
-        <th data-sort="reviewers">Reviewers</th>
-        <th data-sort="age">Opened</th>
-        <th data-sort="updated">Updated</th>
-      </tr></thead>
-      <tbody id="pr-body"></tbody>
-    </table>
-  </div>
-  <div class="empty" id="pr-empty" hidden>No pull requests match these filters.</div>
-</section>
 
-<section>
-  <div class="head">
-    <h2>Reviewer workload</h2>
-    <span class="note">outstanding requests, by who made them · reviews volunteered without a request</span>
+  <section>
+    <div class="head">
+      <h2>Open pull requests</h2>
+      <span class="note" id="open-pr-count"></span>
+      <span class="legend"><span><b>bold</b> = task force selection</span><span>· grey = anyone else</span></span>
+    </div>
+    <div class="filters">
+      <input id="open-f-q" type="search" placeholder="Search number, title, author…" aria-label="Search open pull requests">
+      <select id="open-f-label" aria-label="Filter by label"></select>
+      <select id="open-f-reviewer" aria-label="Filter by reviewer"></select>
+      <select id="open-f-mode" aria-label="Filter by assignment">
+        <option value="all">Any assignment</option>
+        <option value="mine">Has a task force selection</option>
+        <option value="notmine">No task force selection</option>
+        <option value="nohook">Nobody on the hook</option>
+        <option value="unassigned">No reviewer at all</option>
+      </select>
+      <button id="open-f-reset" type="button">Reset</button>
+    </div>
+    <div class="scroll">
+      <table id="open-pr-table">
+        <thead><tr>
+          <th data-sort="number">PR</th>
+          <th data-sort="title">Title</th>
+          <th data-sort="author">Author</th>
+          <th data-sort="labels">Labels</th>
+          <th data-sort="reviewers">Reviewers</th>
+          <th data-sort="age">Opened</th>
+          <th data-sort="tail">Updated</th>
+        </tr></thead>
+        <tbody id="open-pr-body"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="open-pr-empty" hidden>No pull requests match these filters.</div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>Reviewer workload</h2>
+      <span class="note">outstanding requests · “other” includes requests made before the task force began · volunteered = reviewed unasked</span>
+    </div>
+    <div class="scroll">
+      <table id="w-table">
+        <thead><tr>
+          <th data-wsort="reviewer">Reviewer</th>
+          <th data-wsort="mine">Task force</th>
+          <th data-wsort="other">Other requests</th>
+          <th data-wsort="volunteer">Volunteered</th>
+        </tr></thead>
+        <tbody id="w-body"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<div id="panel-merged" role="tabpanel" hidden>
+  <div class="kpis">
+    <div class="kpi"><div class="v num" id="kpi-merged">–</div><div class="k">merged in the last <span class="months">3</span> months <span class="k2">since <span id="merged-since"></span></span></div></div>
+    <div class="kpi"><div class="v num" id="kpi-approved">–</div><div class="k">merged with an approval</div></div>
+    <div class="kpi"><div class="v num" id="kpi-unapproved">–</div><div class="k">merged with no approval</div></div>
+    <div class="kpi"><div class="v num" id="kpi-taskforce">–</div><div class="k">approved by a task force selection</div></div>
   </div>
-  <div class="scroll">
-    <table id="w-table">
-      <thead><tr>
-        <th data-wsort="reviewer">Reviewer</th>
-        <th data-wsort="mine">Assigned by <span class="who">…</span></th>
-        <th data-wsort="other">By others</th>
-        <th data-wsort="volunteer">Volunteered</th>
-      </tr></thead>
-      <tbody id="w-body"></tbody>
-    </table>
-  </div>
-</section>
+
+  <section>
+    <div class="head">
+      <h2>Merged pull requests</h2>
+      <span class="note" id="merged-pr-count"></span>
+      <span class="legend"><span><b>bold</b> = task force selection</span><span>· grey = anyone else</span></span>
+    </div>
+    <div class="filters">
+      <input id="merged-f-q" type="search" placeholder="Search number, title, author…" aria-label="Search merged pull requests">
+      <select id="merged-f-label" aria-label="Filter by label"></select>
+      <select id="merged-f-reviewer" aria-label="Filter by reviewer"></select>
+      <select id="merged-f-mode" aria-label="Filter by approval">
+        <option value="all">Any approval</option>
+        <option value="approved">Approved by anyone</option>
+        <option value="approved-mine">Approved by a task force selection</option>
+        <option value="unapproved">Merged with no approval</option>
+      </select>
+      <button id="merged-f-reset" type="button">Reset</button>
+    </div>
+    <div class="scroll">
+      <table id="merged-pr-table">
+        <thead><tr>
+          <th data-sort="number">PR</th>
+          <th data-sort="title">Title</th>
+          <th data-sort="author">Author</th>
+          <th data-sort="labels">Labels</th>
+          <th data-sort="reviewers">Reviewers</th>
+          <th data-sort="age">Opened</th>
+          <th data-sort="tail">Merged</th>
+        </tr></thead>
+        <tbody id="merged-pr-body"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="merged-pr-empty" hidden>No pull requests match these filters.</div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>Approvals on merged PRs</h2>
+      <span class="note">reviewers of PRs merged in the last <span class="months">3</span> months, and how many they approved</span>
+    </div>
+    <div class="scroll">
+      <table id="a-table">
+        <thead><tr>
+          <th data-wsort="reviewer">Reviewer</th>
+          <th data-wsort="approved">Approved</th>
+          <th data-wsort="mine">As a task force selection</th>
+        </tr></thead>
+        <tbody id="a-body"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
 
 <footer>
   <span>Generated <time id="generated">…</time></span>

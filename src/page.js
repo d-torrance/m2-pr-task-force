@@ -12,6 +12,7 @@ const el = (tag, cls, text) => {
 const DAY = 86400000;
 const days = (iso) => Math.floor((Date.now() - Date.parse(iso)) / DAY);
 const ago = (iso) => {
+  if (!iso) return "—";
   const d = days(iso);
   if (d === 0) return "today";
   if (d < 30) return `${d}d`;
@@ -19,25 +20,50 @@ const ago = (iso) => {
   return `${(d / 365).toFixed(1)}y`;
 };
 
-// Only the exceptional states earn a color. PENDING is the majority state -- painting it
-// would be noise -- and COMMENTED is informational, not a verdict.
-const STATE_LABEL = {
-  PENDING: "pending",
+// Only the exceptional states earn a color. On the open tab PENDING is the majority state --
+// painting it would be noise -- and COMMENTED is informational, not a verdict.
+const STATE_CLASS = { APPROVED: "st-good", CHANGES_REQUESTED: "st-serious" };
+const LABELS = {
   APPROVED: "approved",
   CHANGES_REQUESTED: "changes",
   COMMENTED: "commented",
   DISMISSED: "dismissed",
 };
-const STATE_CLASS = {
-  APPROVED: "st-good",
-  CHANGES_REQUESTED: "st-serious",
+
+// The two views differ only in their tail column, what an outstanding request means, and
+// which aggregate sits underneath. Everything else is shared.
+const VIEWS = {
+  open: {
+    d: () => DATA.open,
+    tail: (pr) => pr.updatedAt,
+    // Still waiting on them.
+    stateLabel: (s) => (s === "PENDING" ? "pending" : LABELS[s] ?? s),
+    sort: "number",
+    dir: -1,
+  },
+  merged: {
+    d: () => DATA.merged,
+    tail: (pr) => pr.mergedAt,
+    // The PR merged with the request still outstanding: they never got to it.
+    stateLabel: (s) => (s === "PENDING" ? "no review" : LABELS[s] ?? s),
+    sort: "tail",
+    dir: -1,
+  },
 };
 
-const state = { sort: "number", dir: -1, wsort: "mine", wdir: -1, q: "", label: "", reviewer: "", mine: "all" };
+const state = {
+  tab: "open",
+  open: { sort: "number", dir: -1, q: "", label: "", reviewer: "", mode: "all" },
+  merged: { sort: "tail", dir: -1, q: "", label: "", reviewer: "", mode: "all" },
+  wsort: "mine",
+  wdir: -1,
+  asort: "approved",
+  adir: -1,
+};
 
 /* ---------------------------------- PR table ---------------------------------- */
 
-function reviewerSpan(r) {
+function reviewerSpan(r, view) {
   // Two visual states by design: the assigner's picks read as ink, everyone else's recede.
   // The distinction between "someone else assigned them" and "they volunteered" is real but
   // secondary -- it lives in the tooltip rather than adding a third visual weight.
@@ -49,19 +75,22 @@ function reviewerSpan(r) {
   const n = el("span", `rv rv-${kind}`);
   n.append(el("span", "rv-name", r.login));
   if (r.isBot) n.append(el("span", "rv-bot", "bot"));
-  if (r.state !== "PENDING") {
-    n.append(el("span", `badge ${STATE_CLASS[r.state] ?? "st-mute"}`, STATE_LABEL[r.state] ?? r.state));
+  if (r.state !== "PENDING" || view === VIEWS.merged) {
+    n.append(el("span", `badge ${STATE_CLASS[r.state] ?? "st-mute"}`, view.stateLabel(r.state)));
   }
+  const on = r.assignedAt ? ` on ${r.assignedAt.slice(0, 10)}` : "";
   n.title =
     r.origin === "mine"
-      ? `${DATA.assigner} requested ${r.login}`
-      : r.origin === "other"
-        ? `Requested by ${r.assignedBy} — not one of ${DATA.assigner}'s task force selections`
-        : `${r.login} reviewed without being requested — not one of ${DATA.assigner}'s task force selections`;
+      ? `Task force selection — ${DATA.assigner} requested ${r.login}${on}`
+      : r.origin === "volunteer"
+        ? `${r.login} reviewed without being requested — not a task force selection`
+        : r.assignedBy === DATA.assigner
+          ? `${DATA.assigner} requested ${r.login}${on}, before the task force began`
+          : `Requested by ${r.assignedBy}${on} — not a task force selection`;
   return n;
 }
 
-function prRow(pr) {
+function prRow(pr, view) {
   const tr = el("tr");
 
   const num = el("td", "col-num");
@@ -72,8 +101,6 @@ function prRow(pr) {
 
   const title = el("td", "col-title", pr.title);
   title.title = pr.title;
-
-  const author = el("td", "col-author", pr.author);
 
   const labels = el("td", "col-labels");
   for (const l of pr.labels) {
@@ -88,124 +115,203 @@ function prRow(pr) {
 
   const revs = el("td", "col-revs");
   if (pr.reviewers.length === 0) {
-    revs.append(el("span", "none", "nobody assigned"));
+    revs.append(el("span", "none", view === VIEWS.merged ? "nobody reviewed" : "nobody assigned"));
   } else {
-    for (const r of pr.reviewers) revs.append(reviewerSpan(r));
+    for (const r of pr.reviewers) revs.append(reviewerSpan(r, view));
   }
 
   const age = el("td", "col-age num", ago(pr.createdAt));
   age.title = pr.createdAt;
-  const upd = el("td", "col-upd num", ago(pr.updatedAt));
-  upd.title = pr.updatedAt;
+  const tail = el("td", "col-upd num", ago(view.tail(pr)));
+  tail.title = view.tail(pr) ?? "";
 
-  tr.append(num, title, author, labels, revs, age, upd);
+  tr.append(num, title, el("td", "col-author", pr.author), labels, revs, age, tail);
   return tr;
 }
 
-function visiblePrs() {
-  const q = state.q.toLowerCase();
-  return DATA.prs.filter((pr) => {
-    if (q && !(`#${pr.number} ${pr.title} ${pr.author}`.toLowerCase().includes(q))) return false;
-    if (state.label && !pr.labels.some((l) => l.name === state.label)) return false;
-    if (state.reviewer && !pr.reviewers.some((r) => r.login === state.reviewer)) return false;
-    if (state.mine === "unassigned" && pr.reviewers.length > 0) return false;
-    if (state.mine === "nohook" && pr.reviewers.some((r) => r.state === "PENDING")) return false;
-    if (state.mine === "mine" && !pr.reviewers.some((r) => r.origin === "mine")) return false;
-    if (state.mine === "notmine" && !pr.reviewers.every((r) => r.origin !== "mine")) return false;
-    return true;
-  });
-}
-
+// Dates sort as raw timestamps so that, like every other column, descending means
+// biggest-first -- i.e. most recent first. Negating here as well would cancel that out.
 const PR_KEY = {
   number: (p) => p.number,
   title: (p) => p.title.toLowerCase(),
   author: (p) => p.author.toLowerCase(),
   labels: (p) => p.labels.length,
   reviewers: (p) => p.reviewers.length,
-  age: (p) => -Date.parse(p.createdAt),
-  updated: (p) => -Date.parse(p.updatedAt),
+  age: (p) => Date.parse(p.createdAt),
 };
 
-function drawPrs() {
-  const rows = visiblePrs();
-  const key = PR_KEY[state.sort];
+function visiblePrs(view, st) {
+  const q = st.q.toLowerCase();
+  return view.d().prs.filter((pr) => {
+    if (q && !`#${pr.number} ${pr.title} ${pr.author}`.toLowerCase().includes(q)) return false;
+    if (st.label && !pr.labels.some((l) => l.name === st.label)) return false;
+    if (st.reviewer && !pr.reviewers.some((r) => r.login === st.reviewer)) return false;
+    const has = (fn) => pr.reviewers.some(fn);
+    switch (st.mode) {
+      case "mine":
+        return has((r) => r.origin === "mine");
+      case "notmine":
+        return !has((r) => r.origin === "mine");
+      case "nohook":
+        return !has((r) => r.state === "PENDING");
+      case "unassigned":
+        return pr.reviewers.length === 0;
+      case "approved":
+        return has((r) => r.state === "APPROVED");
+      case "approved-mine":
+        return has((r) => r.state === "APPROVED" && r.origin === "mine");
+      case "unapproved":
+        return !has((r) => r.state === "APPROVED");
+      default:
+        return true;
+    }
+  });
+}
+
+function drawPrs(key) {
+  const view = VIEWS[key];
+  const st = state[key];
+  const rows = visiblePrs(view, st);
+  const keyFn = st.sort === "tail" ? (p) => Date.parse(view.tail(p) ?? 0) : PR_KEY[st.sort];
   rows.sort((a, b) => {
-    const x = key(a), y = key(b);
-    return (x < y ? -1 : x > y ? 1 : 0) * state.dir || b.number - a.number;
+    const x = keyFn(a);
+    const y = keyFn(b);
+    return (x < y ? -1 : x > y ? 1 : 0) * st.dir || b.number - a.number;
   });
 
-  const body = $("#pr-body");
-  body.replaceChildren(...rows.map(prRow));
-  $("#pr-count").textContent =
-    rows.length === DATA.prs.length
-      ? `${rows.length} pull requests`
-      : `${rows.length} of ${DATA.prs.length} pull requests`;
-  $("#pr-empty").hidden = rows.length > 0;
+  $(`#${key}-pr-body`).replaceChildren(...rows.map((pr) => prRow(pr, view)));
+  const total = view.d().prs.length;
+  $(`#${key}-pr-count`).textContent =
+    rows.length === total ? `${total} pull requests` : `${rows.length} of ${total} pull requests`;
+  $(`#${key}-pr-empty`).hidden = rows.length > 0;
 
-  for (const th of document.querySelectorAll("#pr-table th[data-sort]")) {
-    th.dataset.active = String(th.dataset.sort === state.sort);
-    th.dataset.dir = th.dataset.sort === state.sort ? (state.dir === 1 ? "asc" : "desc") : "";
+  for (const th of document.querySelectorAll(`#${key}-pr-table th[data-sort]`)) {
+    th.dataset.active = String(th.dataset.sort === st.sort);
+    th.dataset.dir = th.dataset.sort === st.sort ? (st.dir === 1 ? "asc" : "desc") : "";
   }
 }
 
-/* ------------------------------ Reviewer workload ------------------------------ */
+/* ------------------------------- Bottom tables -------------------------------- */
 
-const W_KEY = {
-  reviewer: (r) => r.login.toLowerCase(),
-  mine: (r) => r.mine,
-  other: (r) => r.other,
-  volunteer: (r) => r.volunteer,
-};
+// One series per table (the number the table is ranked by), so each bar is a single
+// sequential hue and needs no legend.
+function bar(value, max) {
+  const td = el("td", "w-mine");
+  const track = el("div", "bar");
+  const fill = el("div", "bar-fill");
+  fill.style.width = `${(value / max) * 100}%`;
+  track.append(fill);
+  td.append(el("span", "num", String(value)), track);
+  return td;
+}
 
-function drawWorkload() {
-  const rows = [...DATA.workload];
-  const key = W_KEY[state.wsort];
-  rows.sort((a, b) => {
-    const x = key(a), y = key(b);
-    return (x < y ? -1 : x > y ? 1 : 0) * state.wdir || a.login.localeCompare(b.login);
+function drawTable({ table, body, rows, sortKey, dir, keys, primary, extra }) {
+  const sorted = [...rows].sort((a, b) => {
+    const x = keys[sortKey](a);
+    const y = keys[sortKey](b);
+    return (x < y ? -1 : x > y ? 1 : 0) * dir || a.login.localeCompare(b.login);
   });
-
-  // One series (the queue you own), so the bar is a single sequential hue and needs no legend.
-  const max = Math.max(1, ...DATA.workload.map((r) => r.mine));
-
-  const body = $("#w-body");
-  body.replaceChildren(
-    ...rows.map((r) => {
+  const max = Math.max(1, ...rows.map((r) => r[primary]));
+  $(body).replaceChildren(
+    ...sorted.map((r) => {
       const tr = el("tr");
-      const name = el("td", "w-name", r.login);
-      const mine = el("td", "w-mine");
-      const bar = el("div", "bar");
-      const fill = el("div", "bar-fill");
-      fill.style.width = `${(r.mine / max) * 100}%`;
-      bar.append(fill);
-      mine.append(el("span", "num", String(r.mine)), bar);
-
-      tr.append(
-        name,
-        mine,
-        el("td", "num dim", String(r.other)),
-        el("td", "num dim", String(r.volunteer)),
-      );
+      tr.append(el("td", "w-name", r.login), bar(r[primary], max));
+      for (const k of extra) tr.append(el("td", "num dim", String(r[k])));
       return tr;
     }),
   );
-
-  for (const th of document.querySelectorAll("#w-table th[data-wsort]")) {
-    th.dataset.active = String(th.dataset.wsort === state.wsort);
-    th.dataset.dir = th.dataset.wsort === state.wsort ? (state.wdir === 1 ? "asc" : "desc") : "";
+  for (const th of document.querySelectorAll(`${table} th[data-wsort]`)) {
+    th.dataset.active = String(th.dataset.wsort === sortKey);
+    th.dataset.dir = th.dataset.wsort === sortKey ? (dir === 1 ? "asc" : "desc") : "";
   }
 }
+
+const drawWorkload = () =>
+  drawTable({
+    table: "#w-table",
+    body: "#w-body",
+    rows: DATA.open.workload,
+    sortKey: state.wsort,
+    dir: state.wdir,
+    keys: {
+      reviewer: (r) => r.login.toLowerCase(),
+      mine: (r) => r.mine,
+      other: (r) => r.other,
+      volunteer: (r) => r.volunteer,
+    },
+    primary: "mine",
+    extra: ["other", "volunteer"],
+  });
+
+const drawApprovals = () =>
+  drawTable({
+    table: "#a-table",
+    body: "#a-body",
+    rows: DATA.merged.approvals,
+    sortKey: state.asort,
+    dir: state.adir,
+    keys: {
+      reviewer: (r) => r.login.toLowerCase(),
+      approved: (r) => r.approved,
+      mine: (r) => r.mine,
+    },
+    primary: "approved",
+    extra: ["mine"],
+  });
 
 /* ---------------------------------- Controls ---------------------------------- */
 
 function fillSelect(sel, items, allLabel) {
-  sel.append(el("option", null, allLabel));
-  sel.firstChild.value = "";
+  const keep = sel.value;
+  sel.replaceChildren();
+  const first = el("option", null, allLabel);
+  first.value = "";
+  sel.append(first);
   for (const it of items) {
     const o = el("option", null, it);
     o.value = it;
     sel.append(o);
   }
+  sel.value = keep;
+}
+
+function wireFilters(key) {
+  const st = state[key];
+  const prs = VIEWS[key].d().prs;
+  fillSelect($(`#${key}-f-label`), [...new Set(prs.flatMap((p) => p.labels.map((l) => l.name)))].sort(), "All labels");
+  fillSelect($(`#${key}-f-reviewer`), [...new Set(prs.flatMap((p) => p.reviewers.map((r) => r.login)))].sort(), "All reviewers");
+
+  const on = (sel, ev, fn) => $(sel).addEventListener(ev, (e) => (fn(e.target.value), drawPrs(key)));
+  on(`#${key}-f-q`, "input", (v) => (st.q = v.trim()));
+  on(`#${key}-f-label`, "change", (v) => (st.label = v));
+  on(`#${key}-f-reviewer`, "change", (v) => (st.reviewer = v));
+  on(`#${key}-f-mode`, "change", (v) => (st.mode = v));
+
+  $(`#${key}-f-reset`).addEventListener("click", () => {
+    Object.assign(st, { q: "", label: "", reviewer: "", mode: "all" });
+    for (const s of ["q", "label", "reviewer", "mode"]) $(`#${key}-f-${s}`).value = s === "mode" ? "all" : "";
+    drawPrs(key);
+  });
+
+  for (const th of document.querySelectorAll(`#${key}-pr-table th[data-sort]`)) {
+    th.addEventListener("click", () => {
+      const k = th.dataset.sort;
+      // Text sorts read best A->Z first; counts and dates read best biggest-first.
+      if (st.sort === k) st.dir *= -1;
+      else Object.assign(st, { sort: k, dir: k === "title" || k === "author" ? 1 : -1 });
+      drawPrs(key);
+    });
+  }
+}
+
+function showTab(key) {
+  state.tab = key;
+  for (const btn of document.querySelectorAll("[data-tab]")) {
+    const on = btn.dataset.tab === key;
+    btn.setAttribute("aria-selected", String(on));
+    $(`#panel-${btn.dataset.tab}`).hidden = !on;
+  }
+  history.replaceState(null, "", key === "open" ? location.pathname : `#${key}`);
 }
 
 function init() {
@@ -216,15 +322,33 @@ function init() {
   // This page is public, so it names the assigner rather than addressing a "you" that most
   // readers aren't. The name comes from the data, since TASK_FORCE_ASSIGNER is configurable.
   for (const n of document.querySelectorAll(".who")) n.textContent = DATA.assigner;
-  $("#f-mine").querySelector('[value="mine"]').textContent = `Assigned by ${DATA.assigner}`;
-  $("#f-mine").querySelector('[value="notmine"]').textContent = `Not assigned by ${DATA.assigner}`;
+  for (const n of document.querySelectorAll(".months")) n.textContent = String(DATA.merged.months);
+  $("#tf-start").textContent = DATA.taskForceStart
+    ? new Date(`${DATA.taskForceStart}T00:00:00Z`).toLocaleDateString(undefined, {
+        year: "numeric", month: "long", day: "numeric", timeZone: "UTC",
+      })
+    : "the beginning";
 
-  const s = DATA.stats;
-  $("#kpi-prs").textContent = s.prs;
-  $("#kpi-mine").textContent = s.pendingMine;
-  $("#kpi-other").textContent = s.pending - s.pendingMine;
-  $("#kpi-nohook").textContent = s.noOneOnHook;
-  $("#kpi-nohook-note").textContent = `${s.unassigned} have no reviewer at all`;
+  const o = DATA.open.stats;
+  $("#kpi-prs").textContent = o.prs;
+  $("#kpi-mine").textContent = o.pendingMine;
+  $("#kpi-other").textContent = o.pending - o.pendingMine;
+  $("#kpi-nohook").textContent = o.noOneOnHook;
+  $("#kpi-nohook-note").textContent = `${o.unassigned} have no reviewer at all`;
+
+  const m = DATA.merged.stats;
+  $("#kpi-merged").textContent = m.prs;
+  $("#kpi-approved").textContent = m.approved;
+  $("#kpi-unapproved").textContent = m.unapproved;
+  $("#kpi-taskforce").textContent = m.taskForce;
+  $("#tab-open-count").textContent = o.prs;
+  $("#tab-merged-count").textContent = m.prs;
+  $("#merged-since").textContent = new Date(`${DATA.merged.since}T00:00:00Z`).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 
   const when = new Date(DATA.generatedAt);
   $("#generated").textContent = when.toLocaleString();
@@ -235,56 +359,31 @@ function init() {
     $("#stale").hidden = false;
   }
 
-  const labels = [...new Set(DATA.prs.flatMap((p) => p.labels.map((l) => l.name)))].sort();
-  const reviewers = [...new Set(DATA.prs.flatMap((p) => p.reviewers.map((r) => r.login)))].sort();
-  fillSelect($("#f-label"), labels, "All labels");
-  fillSelect($("#f-reviewer"), reviewers, "All reviewers");
-
-  $("#f-q").addEventListener("input", (e) => {
-    state.q = e.target.value.trim();
-    drawPrs();
-  });
-  $("#f-label").addEventListener("change", (e) => {
-    state.label = e.target.value;
-    drawPrs();
-  });
-  $("#f-reviewer").addEventListener("change", (e) => {
-    state.reviewer = e.target.value;
-    drawPrs();
-  });
-  $("#f-mine").addEventListener("change", (e) => {
-    state.mine = e.target.value;
-    drawPrs();
-  });
-  $("#f-reset").addEventListener("click", () => {
-    Object.assign(state, { q: "", label: "", reviewer: "", mine: "all" });
-    $("#f-q").value = "";
-    $("#f-label").value = "";
-    $("#f-reviewer").value = "";
-    $("#f-mine").value = "all";
-    drawPrs();
-  });
-
-  for (const th of document.querySelectorAll("#pr-table th[data-sort]")) {
-    th.addEventListener("click", () => {
-      const k = th.dataset.sort;
-      // Text sorts read best A->Z first; counts and dates read best biggest-first.
-      if (state.sort === k) state.dir *= -1;
-      else Object.assign(state, { sort: k, dir: k === "title" || k === "author" ? 1 : -1 });
-      drawPrs();
-    });
+  for (const btn of document.querySelectorAll("[data-tab]")) {
+    btn.addEventListener("click", () => showTab(btn.dataset.tab));
   }
-  for (const th of document.querySelectorAll("#w-table th[data-wsort]")) {
-    th.addEventListener("click", () => {
-      const k = th.dataset.wsort;
-      if (state.wsort === k) state.wdir *= -1;
-      else Object.assign(state, { wsort: k, wdir: k === "reviewer" ? 1 : -1 });
-      drawWorkload();
-    });
+  for (const [table, sortState, draw] of [
+    ["#w-table", ["wsort", "wdir"], drawWorkload],
+    ["#a-table", ["asort", "adir"], drawApprovals],
+  ]) {
+    for (const th of document.querySelectorAll(`${table} th[data-wsort]`)) {
+      th.addEventListener("click", () => {
+        const k = th.dataset.wsort;
+        const [sk, dk] = sortState;
+        if (state[sk] === k) state[dk] *= -1;
+        else Object.assign(state, { [sk]: k, [dk]: k === "reviewer" ? 1 : -1 });
+        draw();
+      });
+    }
   }
 
+  wireFilters("open");
+  wireFilters("merged");
   drawWorkload();
-  drawPrs();
+  drawApprovals();
+  drawPrs("open");
+  drawPrs("merged");
+  showTab(location.hash === "#merged" ? "merged" : "open");
 }
 
 init();

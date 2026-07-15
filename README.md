@@ -1,8 +1,10 @@
 # M2 PR Task Force
 
-A dashboard of open, non-draft pull requests on [Macaulay2/M2][m2] — who wrote them, what
-they're labelled, and **who the task force put on them** — plus a reviewer workload table for spreading
-review load around.
+A dashboard of pull requests on [Macaulay2/M2][m2] — who wrote them, what they're labelled, and
+**who the task force put on them**. Two tabs:
+
+- **Open** — every open non-draft PR, plus a reviewer workload table for spreading review load.
+- **Merged** — everything merged in the last 3 months, plus how many each reviewer approved.
 
 Published daily to GitHub Pages. Run `npm start` any time to regenerate it locally.
 
@@ -18,9 +20,18 @@ origins:
 
 | Origin | Meaning | Can it be pending? |
 |---|---|---|
-| **mine** | the assigner requested this review — a task force selection | yes |
-| **other** | somebody else requested it | yes |
+| **mine** | a task force selection: the assigner requested it, on or after the start date | yes |
+| **other** | somebody else requested it — or the assigner did, before the task force began | yes |
 | **volunteer** | nobody ever requested them; they reviewed anyway | no — nothing was ever asked |
+
+### Why a start date
+
+The assigner has been requesting reviews as ordinary maintainer work for years, and the API
+cannot tell that apart from the task force. Without `TASK_FORCE_START` the merged view claimed
+**8** PRs for an effort that had actually produced **2** — the other six were assignments from
+April and May, months before the task force existed. Requests made before the cutoff are still
+attributed truthfully (the tooltip names the requester and the date); they simply aren't the
+task force's own output.
 
 The PR table shows **two** visual states, because triage only asks one question: **bold** is a
 task force selection, grey is anyone else's (hover any name for who requested it). Bots are
@@ -64,6 +75,8 @@ The build uses `GITHUB_TOKEN` if set, otherwise `gh auth token`, so a local run 
 | `TASK_FORCE_OWNER` | `Macaulay2` | repo owner |
 | `TASK_FORCE_REPO` | `M2` | repo name |
 | `TASK_FORCE_ASSIGNER` | `d-torrance` | whose requests count as task force selections |
+| `TASK_FORCE_START` | `2026-07-06` | requests before this date aren't task force selections |
+| `TASK_FORCE_MONTHS` | `3` | how far back the merged tab looks |
 
 `TASK_FORCE_ASSIGNER` is deliberately independent of the token's identity: CI builds run as
 `github-actions[bot]` but must still attribute to a real person.

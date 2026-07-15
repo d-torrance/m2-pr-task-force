@@ -1,137 +1,528 @@
-[
-  {
-    "comment": "Drafts are excluded entirely, however many reviewers they carry.",
-    "number": 900,
-    "title": "A draft",
-    "url": "https://example.invalid/900",
-    "isDraft": true,
-    "createdAt": "2026-07-01T00:00:00Z",
-    "updatedAt": "2026-07-02T00:00:00Z",
-    "author": { "login": "someone" },
-    "labels": { "nodes": [] },
-    "reviewRequests": { "nodes": [{ "requestedReviewer": { "__typename": "User", "login": "ghost" } }] },
-    "latestReviews": { "nodes": [] },
-    "timelineItems": { "nodes": [] }
-  },
-  {
-    "comment": "All three origins on one PR: mine pending, other's pending, and a volunteer who reviewed.",
-    "number": 100,
-    "title": "Three origins",
-    "url": "https://example.invalid/100",
-    "isDraft": false,
-    "createdAt": "2026-07-01T00:00:00Z",
-    "updatedAt": "2026-07-10T00:00:00Z",
-    "author": { "login": "contributor" },
-    "labels": { "nodes": [{ "name": "Core", "color": "ff0000" }] },
-    "reviewRequests": {
-      "nodes": [
-        { "requestedReviewer": { "__typename": "User", "login": "alice" } },
-        { "requestedReviewer": { "__typename": "User", "login": "bob" } }
-      ]
+{
+  "open": [
+    {
+      "comment": "Drafts are excluded entirely, however many reviewers they carry.",
+      "number": 900,
+      "title": "A draft",
+      "url": "https://example.invalid/900",
+      "isDraft": true,
+      "createdAt": "2026-07-01T00:00:00Z",
+      "updatedAt": "2026-07-02T00:00:00Z",
+      "author": {
+        "login": "someone"
+      },
+      "labels": {
+        "nodes": []
+      },
+      "reviewRequests": {
+        "nodes": [
+          {
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "ghost"
+            }
+          }
+        ]
+      },
+      "latestReviews": {
+        "nodes": []
+      },
+      "timelineItems": {
+        "nodes": []
+      }
     },
-    "latestReviews": {
-      "nodes": [{ "state": "COMMENTED", "submittedAt": "2026-07-09T00:00:00Z", "author": { "__typename": "User", "login": "carol" } }]
+    {
+      "comment": "All three origins on one PR: mine pending, other's pending, and a volunteer who reviewed.",
+      "number": 100,
+      "title": "Three origins",
+      "url": "https://example.invalid/100",
+      "isDraft": false,
+      "createdAt": "2026-07-01T00:00:00Z",
+      "updatedAt": "2026-07-10T00:00:00Z",
+      "author": {
+        "login": "contributor"
+      },
+      "labels": {
+        "nodes": [
+          {
+            "name": "Core",
+            "color": "ff0000"
+          }
+        ]
+      },
+      "reviewRequests": {
+        "nodes": [
+          {
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "alice"
+            }
+          },
+          {
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "bob"
+            }
+          }
+        ]
+      },
+      "latestReviews": {
+        "nodes": [
+          {
+            "state": "COMMENTED",
+            "submittedAt": "2026-07-09T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "carol"
+            }
+          }
+        ]
+      },
+      "timelineItems": {
+        "nodes": [
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-07-02T00:00:00Z",
+            "actor": {
+              "login": "me"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "alice"
+            }
+          },
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-07-03T00:00:00Z",
+            "actor": {
+              "login": "otherperson"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "bob"
+            }
+          }
+        ]
+      }
     },
-    "timelineItems": {
-      "nodes": [
-        { "__typename": "ReviewRequestedEvent", "createdAt": "2026-07-02T00:00:00Z", "actor": { "login": "me" }, "requestedReviewer": { "__typename": "User", "login": "alice" } },
-        { "__typename": "ReviewRequestedEvent", "createdAt": "2026-07-03T00:00:00Z", "actor": { "login": "otherperson" }, "requestedReviewer": { "__typename": "User", "login": "bob" } }
-      ]
-    }
-  },
-  {
-    "comment": "Request -> remove -> re-request by a different actor. Only the LAST event may count, so this is mine, not otherperson's.",
-    "number": 101,
-    "title": "Reassigned after removal",
-    "url": "https://example.invalid/101",
-    "isDraft": false,
-    "createdAt": "2026-06-01T00:00:00Z",
-    "updatedAt": "2026-07-11T00:00:00Z",
-    "author": { "login": "contributor" },
-    "labels": { "nodes": [] },
-    "reviewRequests": { "nodes": [{ "requestedReviewer": { "__typename": "User", "login": "alice" } }] },
-    "latestReviews": { "nodes": [] },
-    "timelineItems": {
-      "nodes": [
-        { "__typename": "ReviewRequestedEvent", "createdAt": "2026-06-02T00:00:00Z", "actor": { "login": "otherperson" }, "requestedReviewer": { "__typename": "User", "login": "alice" } },
-        { "__typename": "ReviewRequestRemovedEvent", "createdAt": "2026-06-03T00:00:00Z", "actor": { "login": "otherperson" }, "requestedReviewer": { "__typename": "User", "login": "alice" } },
-        { "__typename": "ReviewRequestedEvent", "createdAt": "2026-06-04T00:00:00Z", "actor": { "login": "me" }, "requestedReviewer": { "__typename": "User", "login": "alice" } }
-      ]
-    }
-  },
-  {
-    "comment": "Assigned by me, then removed and never re-added: dave volunteered a review afterwards, so he is NOT my selection.",
-    "number": 102,
-    "title": "Removed then volunteered",
-    "url": "https://example.invalid/102",
-    "isDraft": false,
-    "createdAt": "2026-06-05T00:00:00Z",
-    "updatedAt": "2026-07-12T00:00:00Z",
-    "author": { "login": "contributor" },
-    "labels": { "nodes": [] },
-    "reviewRequests": { "nodes": [] },
-    "latestReviews": {
-      "nodes": [{ "state": "APPROVED", "submittedAt": "2026-07-12T00:00:00Z", "author": { "__typename": "User", "login": "dave" } }]
+    {
+      "comment": "Request -> remove -> re-request by a different actor. Only the LAST event may count, so this is mine, not otherperson's.",
+      "number": 101,
+      "title": "Reassigned after removal",
+      "url": "https://example.invalid/101",
+      "isDraft": false,
+      "createdAt": "2026-06-01T00:00:00Z",
+      "updatedAt": "2026-07-11T00:00:00Z",
+      "author": {
+        "login": "contributor"
+      },
+      "labels": {
+        "nodes": []
+      },
+      "reviewRequests": {
+        "nodes": [
+          {
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "alice"
+            }
+          }
+        ]
+      },
+      "latestReviews": {
+        "nodes": []
+      },
+      "timelineItems": {
+        "nodes": [
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-06-02T00:00:00Z",
+            "actor": {
+              "login": "otherperson"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "alice"
+            }
+          },
+          {
+            "__typename": "ReviewRequestRemovedEvent",
+            "createdAt": "2026-06-03T00:00:00Z",
+            "actor": {
+              "login": "otherperson"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "alice"
+            }
+          },
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-06-04T00:00:00Z",
+            "actor": {
+              "login": "me"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "alice"
+            }
+          }
+        ]
+      }
     },
-    "timelineItems": {
-      "nodes": [
-        { "__typename": "ReviewRequestedEvent", "createdAt": "2026-06-06T00:00:00Z", "actor": { "login": "me" }, "requestedReviewer": { "__typename": "User", "login": "dave" } },
-        { "__typename": "ReviewRequestRemovedEvent", "createdAt": "2026-06-07T00:00:00Z", "actor": { "login": "me" }, "requestedReviewer": { "__typename": "User", "login": "dave" } }
-      ]
-    }
-  },
-  {
-    "comment": "Re-requested after reviewing: alice appears in BOTH reviewRequests and latestReviews. Pending must win -- she owes another look.",
-    "number": 103,
-    "title": "Re-requested after review",
-    "url": "https://example.invalid/103",
-    "isDraft": false,
-    "createdAt": "2026-06-10T00:00:00Z",
-    "updatedAt": "2026-07-13T00:00:00Z",
-    "author": { "login": "contributor" },
-    "labels": { "nodes": [] },
-    "reviewRequests": { "nodes": [{ "requestedReviewer": { "__typename": "User", "login": "alice" } }] },
-    "latestReviews": {
-      "nodes": [{ "state": "CHANGES_REQUESTED", "submittedAt": "2026-07-01T00:00:00Z", "author": { "__typename": "User", "login": "alice" } }]
+    {
+      "comment": "Assigned by me, then removed and never re-added: dave volunteered a review afterwards, so he is NOT my selection.",
+      "number": 102,
+      "title": "Removed then volunteered",
+      "url": "https://example.invalid/102",
+      "isDraft": false,
+      "createdAt": "2026-06-05T00:00:00Z",
+      "updatedAt": "2026-07-12T00:00:00Z",
+      "author": {
+        "login": "contributor"
+      },
+      "labels": {
+        "nodes": []
+      },
+      "reviewRequests": {
+        "nodes": []
+      },
+      "latestReviews": {
+        "nodes": [
+          {
+            "state": "APPROVED",
+            "submittedAt": "2026-07-12T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "dave"
+            }
+          }
+        ]
+      },
+      "timelineItems": {
+        "nodes": [
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-06-06T00:00:00Z",
+            "actor": {
+              "login": "me"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "dave"
+            }
+          },
+          {
+            "__typename": "ReviewRequestRemovedEvent",
+            "createdAt": "2026-06-07T00:00:00Z",
+            "actor": {
+              "login": "me"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "dave"
+            }
+          }
+        ]
+      }
     },
-    "timelineItems": {
-      "nodes": [
-        { "__typename": "ReviewRequestedEvent", "createdAt": "2026-06-11T00:00:00Z", "actor": { "login": "me" }, "requestedReviewer": { "__typename": "User", "login": "alice" } }
-      ]
-    }
-  },
-  {
-    "comment": "A bot review and a team request. The bot shows on the row but must not rank in the workload.",
-    "number": 104,
-    "title": "Bot and team",
-    "url": "https://example.invalid/104",
-    "isDraft": false,
-    "createdAt": "2026-06-20T00:00:00Z",
-    "updatedAt": "2026-07-14T00:00:00Z",
-    "author": { "login": "contributor" },
-    "labels": { "nodes": [] },
-    "reviewRequests": { "nodes": [{ "requestedReviewer": { "__typename": "Team", "name": "reviewers-team" } }] },
-    "latestReviews": {
-      "nodes": [{ "state": "COMMENTED", "submittedAt": "2026-07-14T00:00:00Z", "author": { "__typename": "Bot", "login": "copilot-pull-request-reviewer" } }]
+    {
+      "comment": "Re-requested after reviewing: alice appears in BOTH reviewRequests and latestReviews. Pending must win -- she owes another look.",
+      "number": 103,
+      "title": "Re-requested after review",
+      "url": "https://example.invalid/103",
+      "isDraft": false,
+      "createdAt": "2026-06-10T00:00:00Z",
+      "updatedAt": "2026-07-13T00:00:00Z",
+      "author": {
+        "login": "contributor"
+      },
+      "labels": {
+        "nodes": []
+      },
+      "reviewRequests": {
+        "nodes": [
+          {
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "alice"
+            }
+          }
+        ]
+      },
+      "latestReviews": {
+        "nodes": [
+          {
+            "state": "CHANGES_REQUESTED",
+            "submittedAt": "2026-07-01T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "alice"
+            }
+          }
+        ]
+      },
+      "timelineItems": {
+        "nodes": [
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-06-11T00:00:00Z",
+            "actor": {
+              "login": "me"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "alice"
+            }
+          }
+        ]
+      }
     },
-    "timelineItems": {
-      "nodes": [
-        { "__typename": "ReviewRequestedEvent", "createdAt": "2026-06-21T00:00:00Z", "actor": { "login": "me" }, "requestedReviewer": { "__typename": "Team", "name": "reviewers-team" } }
-      ]
+    {
+      "comment": "A bot review and a team request. The bot shows on the row but must not rank in the workload.",
+      "number": 104,
+      "title": "Bot and team",
+      "url": "https://example.invalid/104",
+      "isDraft": false,
+      "createdAt": "2026-06-20T00:00:00Z",
+      "updatedAt": "2026-07-14T00:00:00Z",
+      "author": {
+        "login": "contributor"
+      },
+      "labels": {
+        "nodes": []
+      },
+      "reviewRequests": {
+        "nodes": [
+          {
+            "requestedReviewer": {
+              "__typename": "Team",
+              "name": "reviewers-team"
+            }
+          }
+        ]
+      },
+      "latestReviews": {
+        "nodes": [
+          {
+            "state": "COMMENTED",
+            "submittedAt": "2026-07-14T00:00:00Z",
+            "author": {
+              "__typename": "Bot",
+              "login": "copilot-pull-request-reviewer"
+            }
+          }
+        ]
+      },
+      "timelineItems": {
+        "nodes": [
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-06-21T00:00:00Z",
+            "actor": {
+              "login": "me"
+            },
+            "requestedReviewer": {
+              "__typename": "Team",
+              "name": "reviewers-team"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "comment": "Nobody at all -- the real to-do. Also a null author: a deleted GitHub account.",
+      "number": 105,
+      "title": "Untouched",
+      "url": "https://example.invalid/105",
+      "isDraft": false,
+      "createdAt": "2026-05-01T00:00:00Z",
+      "updatedAt": "2026-05-02T00:00:00Z",
+      "author": null,
+      "labels": {
+        "nodes": []
+      },
+      "reviewRequests": {
+        "nodes": []
+      },
+      "latestReviews": {
+        "nodes": []
+      },
+      "timelineItems": {
+        "nodes": []
+      }
     }
-  },
-  {
-    "comment": "Nobody at all -- the real to-do. Also a null author: a deleted GitHub account.",
-    "number": 105,
-    "title": "Untouched",
-    "url": "https://example.invalid/105",
-    "isDraft": false,
-    "createdAt": "2026-05-01T00:00:00Z",
-    "updatedAt": "2026-05-02T00:00:00Z",
-    "author": null,
-    "labels": { "nodes": [] },
-    "reviewRequests": { "nodes": [] },
-    "latestReviews": { "nodes": [] },
-    "timelineItems": { "nodes": [] }
-  }
-]
+  ],
+  "merged": [
+    {
+      "comment": "Merged with an approval from a task force selection (requested after the start date).",
+      "number": 200,
+      "title": "Task force win",
+      "url": "https://example.invalid/200",
+      "isDraft": false,
+      "createdAt": "2026-07-02T00:00:00Z",
+      "updatedAt": "2026-07-09T00:00:00Z",
+      "mergedAt": "2026-07-09T00:00:00Z",
+      "author": {
+        "login": "contributor"
+      },
+      "labels": {
+        "nodes": []
+      },
+      "reviewRequests": {
+        "nodes": []
+      },
+      "latestReviews": {
+        "nodes": [
+          {
+            "state": "APPROVED",
+            "submittedAt": "2026-07-08T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "alice"
+            }
+          }
+        ]
+      },
+      "timelineItems": {
+        "nodes": [
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-07-03T00:00:00Z",
+            "actor": {
+              "login": "me"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "alice"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "comment": "Approved by someone I requested BEFORE the task force existed. Must not count as task force output.",
+      "number": 201,
+      "title": "Pre-task-force approval",
+      "url": "https://example.invalid/201",
+      "isDraft": false,
+      "createdAt": "2026-05-01T00:00:00Z",
+      "updatedAt": "2026-05-20T00:00:00Z",
+      "mergedAt": "2026-05-20T00:00:00Z",
+      "author": {
+        "login": "contributor"
+      },
+      "labels": {
+        "nodes": []
+      },
+      "reviewRequests": {
+        "nodes": []
+      },
+      "latestReviews": {
+        "nodes": [
+          {
+            "state": "APPROVED",
+            "submittedAt": "2026-05-19T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "bob"
+            }
+          }
+        ]
+      },
+      "timelineItems": {
+        "nodes": [
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-05-02T00:00:00Z",
+            "actor": {
+              "login": "me"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "bob"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "comment": "Merged with no approval at all -- common, and the baseline the task force exists to move.",
+      "number": 202,
+      "title": "Merged unapproved",
+      "url": "https://example.invalid/202",
+      "isDraft": false,
+      "createdAt": "2026-06-01T00:00:00Z",
+      "updatedAt": "2026-06-02T00:00:00Z",
+      "mergedAt": "2026-06-02T00:00:00Z",
+      "author": {
+        "login": "contributor"
+      },
+      "labels": {
+        "nodes": []
+      },
+      "reviewRequests": {
+        "nodes": []
+      },
+      "latestReviews": {
+        "nodes": []
+      },
+      "timelineItems": {
+        "nodes": []
+      }
+    },
+    {
+      "comment": "Merged while a task force request was still outstanding: carol never reviewed it. Also a volunteer comment (not an approval).",
+      "number": 203,
+      "title": "Merged with request outstanding",
+      "url": "https://example.invalid/203",
+      "isDraft": false,
+      "createdAt": "2026-07-04T00:00:00Z",
+      "updatedAt": "2026-07-11T00:00:00Z",
+      "mergedAt": "2026-07-11T00:00:00Z",
+      "author": {
+        "login": "contributor"
+      },
+      "labels": {
+        "nodes": []
+      },
+      "reviewRequests": {
+        "nodes": [
+          {
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "carol"
+            }
+          }
+        ]
+      },
+      "latestReviews": {
+        "nodes": [
+          {
+            "state": "COMMENTED",
+            "submittedAt": "2026-07-10T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "dave"
+            }
+          }
+        ]
+      },
+      "timelineItems": {
+        "nodes": [
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-07-05T00:00:00Z",
+            "actor": {
+              "login": "me"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "carol"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

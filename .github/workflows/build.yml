@@ -45,6 +45,9 @@ jobs:
           TASK_FORCE_OWNER: Macaulay2
           TASK_FORCE_REPO: M2
           TASK_FORCE_ASSIGNER: d-torrance
+          # Requests before this are ordinary maintainer work, not task force output.
+          TASK_FORCE_START: "2026-07-06"
+          TASK_FORCE_MONTHS: "3"
         run: npm start
 
       - uses: actions/configure-pages@v5
