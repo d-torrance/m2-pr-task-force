@@ -1,0 +1,63 @@
+name: Build and deploy dashboard
+
+on:
+  schedule:
+    # Daily. GitHub's scheduler is best-effort and drifts when the fleet is busy, so the
+    # page footer prints its own generation time rather than implying this is exact.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+# Read-only on contents: the dashboard is published as a Pages artifact rather than
+# committed, so nothing here writes to the repo and there is no daily junk commit.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let a cron run and a manual run deploy over each other. Don't cancel a run
+# mid-deploy; just queue behind it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Zero dependencies, so there is nothing to install -- no npm ci, no lockfile.
+      - name: Test attribution logic
+        run: npm test
+
+      - name: Build dashboard
+        env:
+          # Reading a public repo is within the default token's rights; no PAT needed.
+          # Attribution keys off TASK_FORCE_ASSIGNER, not this token's identity -- the
+          # build runs as github-actions[bot] but must credit a real person.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TASK_FORCE_OWNER: Macaulay2
+          TASK_FORCE_REPO: M2
+          TASK_FORCE_ASSIGNER: d-torrance
+        run: npm start
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,12 @@
+{
+  "name": "m2-pr-task-force",
+  "version": "1.0.0",
+  "description": "Dashboard of open Macaulay2/M2 pull requests and reviewer workload",
+  "type": "module",
+  "scripts": {
+    "start": "node build.js",
+    "test": "node --test"
+  },
+  "license": "MIT",
+  "private": true
+}
