@@ -37,7 +37,7 @@ const data = reconcile({ open, merged, since, months: MONTHS }, { me: ME, repo, 
 const o = data.open.stats;
 console.log(`\nopen:`);
 console.log(`  ${open.length} open (${open.length - o.prs} draft, ${o.prs} shown)`);
-console.log(`  ${o.pending} pending review requests — ${o.pendingMine} are task force picks (by ${ME} since ${START}), ${o.pending - o.pendingMine} other`);
+console.log(`  ${o.pending} PRs awaiting review — ${o.pendingMine} with a task force pick (by ${ME} since ${START}), ${o.pending - o.pendingMine} assigned only by others`);
 console.log(`  ${o.noOneOnHook} PRs with nobody on the hook (${o.unassigned} with no reviewer at all)`);
 console.log(`  ${data.open.workload.length} reviewers`);
 

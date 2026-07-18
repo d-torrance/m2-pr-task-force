@@ -108,6 +108,13 @@ test("the two gap numbers measure different things", () => {
   assert.equal(data.open.stats.noOneOnHook, 2);
 });
 
+test("the headline counts are PRs, and they partition the open queue", () => {
+  // A PR with two pending reviewers is still one PR waiting, so these must add up.
+  const s = data.open.stats;
+  assert.equal(s.pending + s.noOneOnHook, s.prs);
+  assert.ok(s.pendingMine <= s.pending);
+});
+
 test("a deleted account does not crash the build", () => {
   assert.equal(pr(105).author, "(ghost)");
 });

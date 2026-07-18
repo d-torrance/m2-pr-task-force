@@ -164,7 +164,13 @@ function reconcileOpen(rawPrs, me, start) {
     .map((pr) => shape(pr, me, start))
     .sort((a, b) => b.number - a.number);
 
-  const pending = prs.flatMap((p) => p.reviewers).filter((r) => r.state === "PENDING");
+  // Every KPI here counts PRs, not reviewer slots, so the headline numbers partition the
+  // queue exactly: pendingMine + pendingOther + noOneOnHook === prs.length. A PR with two
+  // pending reviewers is one PR waiting, and a PR the assigner picked counts as theirs even
+  // if someone else also requested a reviewer on it -- the task force owns it either way.
+  const isPending = (r) => r.state === "PENDING";
+  const waiting = prs.filter((p) => p.reviewers.some(isPending));
+  const pendingMine = waiting.filter((p) => p.reviewers.some((r) => isPending(r) && r.origin === "mine"));
 
   return {
     prs,
@@ -175,9 +181,9 @@ function reconcileOpen(rawPrs, me, start) {
       // catches the PR whose only reviewer volunteered a drive-by comment and owes nothing --
       // still nobody committed to reviewing it, so it's the real queue of work to hand out.
       unassigned: prs.filter((p) => p.reviewers.length === 0).length,
-      noOneOnHook: prs.filter((p) => !p.reviewers.some((r) => r.state === "PENDING")).length,
-      pending: pending.length,
-      pendingMine: pending.filter((r) => r.origin === "mine").length,
+      noOneOnHook: prs.length - waiting.length,
+      pending: waiting.length,
+      pendingMine: pendingMine.length,
     },
   };
 }
