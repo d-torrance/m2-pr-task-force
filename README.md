@@ -72,9 +72,12 @@ Two caveats the page states outright, rather than leaving a reader to infer:
 - **Every duration is capped by the age of the effort.** A request cannot have gone unanswered
   for longer than the task force has existed, so the medians keep climbing while that ceiling
   lifts. A rising median is not by itself a worsening queue.
-- **The merged-only response rate is not a success rate.** A PR reaching "merged" has largely
-  been reviewed already, so that subset is selected for having been answered — it will always
-  look better than the open queue. The page leads with the combined figure.
+And one statistic deliberately absent: **a cumulative "% of requests answered".** It reads as a
+response rate but behaves like an odometer — the denominator only ever grows, so it drifts
+upward as old requests age into answers whatever this week looked like, and its ceiling is set
+by how often PRs merge with a request still outstanding (3 of 24 so far, so ~88%, not 100%).
+The current-state figures — median wait, longest wait, count past 30 days — answer the same
+question without the drift.
 
 ## Usage
 

@@ -302,18 +302,6 @@ function drawWaitTimes() {
   $("#tf-oldest").textContent = dur(o.oldestDays);
   $("#tf-stalled").textContent = o.stalled;
   $("#tf-stalled-days").textContent = String(o.stalledDays);
-  $("#tf-answered").textContent = rq.total ? `${Math.round((100 * rq.answered) / rq.total)}%` : "—";
-  // The other figures in this section count PRs; this one counts requests, which is a
-  // different and larger number -- two reviewers on one PR is two requests -- so the note
-  // spells out the denominator rather than leaving "97" to be reconciled against a PR count.
-  //
-  // Both tabs on purpose. The merged-only rate looks far better, but a PR only reaches
-  // "merged" once it has largely been reviewed, so that subset is selected for having been
-  // answered; the open-only rate has the mirror bias, since a reviewed PR tends to merge and
-  // leave the open queue. The combined figure is the one that is not picked either way.
-  $("#tf-answered-note").textContent =
-    `${rq.answered} of ${rq.total} — each reviewer asked counts once: ` +
-    `${rq.open.total} on open PRs, ${rq.merged.total} on merged`;
 
   $("#tf-merged-note").textContent = `${plural(m.prs, "merged PR carries", "merged PRs carry")} a task force request`;
   $("#tf-m-median").textContent = dur(m.medianDays);

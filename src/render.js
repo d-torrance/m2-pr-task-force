@@ -273,10 +273,6 @@ export function render(data) {
       <div class="fig"><div class="v num" id="tf-median">–</div><div class="k">median wait since the request</div></div>
       <div class="fig"><div class="v num" id="tf-oldest">–</div><div class="k">longest a request has gone unanswered</div></div>
       <div class="fig flag"><div class="v num" id="tf-stalled">–</div><div class="k">waiting over <span id="tf-stalled-days">30</span> days</div></div>
-      <div class="fig">
-        <div class="v num" id="tf-answered">–</div>
-        <div class="k">of review requests answered <span class="k2" id="tf-answered-note"></span></div>
-      </div>
     </div>
     <figure class="chart">
       <figcaption>How long the unanswered requests have been waiting</figcaption>
