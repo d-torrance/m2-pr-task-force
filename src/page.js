@@ -286,10 +286,15 @@ function drawWaitTimes() {
   const m = DATA.merged.taskForce;
   const rq = DATA.taskForce.requests;
 
+  // Every figure in this section is about PRs that already have a reviewer on them; the
+  // PRs nobody has been asked to review are the "nobody on the hook" KPI above, not this.
   $("#tf-open-note").textContent =
-    `${o.prs} open PRs carry a request from ${DATA.assigner}; ${o.answered} have been answered`;
-  $("#tf-waiting").textContent = o.waiting;
+    `of the ${o.prs} open PRs with a reviewer ${DATA.assigner} requested, ${o.answered} have been answered`;
+  // Not the count of waiting PRs: that is definitionally the same number as the
+  // "awaiting review — assigned by <assigner>" KPI directly above, and printing it twice
+  // just costs a slot. The note line carries the denominator instead.
   $("#tf-median").textContent = dur(o.medianDays);
+  $("#tf-oldest").textContent = dur(o.oldestDays);
   $("#tf-stalled").textContent = o.stalled;
   $("#tf-stalled-days").textContent = String(o.stalledDays);
   $("#tf-answered").textContent = rq.total ? `${Math.round((100 * rq.answered) / rq.total)}%` : "—";

@@ -266,12 +266,12 @@ export function render(data) {
 
   <section>
     <div class="head">
-      <h2>Waiting on a task force pick</h2>
+      <h2>Task force requests awaiting review</h2>
       <span class="note" id="tf-open-note"></span>
     </div>
     <div class="figs">
-      <div class="fig"><div class="v num" id="tf-waiting">–</div><div class="k">PRs with a pick still unanswered</div></div>
       <div class="fig"><div class="v num" id="tf-median">–</div><div class="k">median wait since the request</div></div>
+      <div class="fig"><div class="v num" id="tf-oldest">–</div><div class="k">longest a request has gone unanswered</div></div>
       <div class="fig flag"><div class="v num" id="tf-stalled">–</div><div class="k">waiting over <span id="tf-stalled-days">30</span> days</div></div>
       <div class="fig">
         <div class="v num" id="tf-answered">–</div>
