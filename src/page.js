@@ -51,6 +51,11 @@ const VIEWS = {
   },
 };
 
+const startLabel = (opts) =>
+  DATA.taskForceStart
+    ? new Date(`${DATA.taskForceStart}T00:00:00Z`).toLocaleDateString(undefined, { ...opts, timeZone: "UTC" })
+    : "the beginning";
+
 const state = {
   tab: "open",
   open: { sort: "number", dir: -1, q: "", label: "", reviewer: "", mode: "all" },
@@ -298,10 +303,17 @@ function drawWaitTimes() {
   $("#tf-stalled").textContent = o.stalled;
   $("#tf-stalled-days").textContent = String(o.stalledDays);
   $("#tf-answered").textContent = rq.total ? `${Math.round((100 * rq.answered) / rq.total)}%` : "—";
-  // Deliberately the combined figure. The merged-only rate looks far better, but a PR only
-  // reaches "merged" once it has largely been reviewed, so that subset is selected for
-  // having been answered -- quoting it as a response rate would flatter the effort.
-  $("#tf-answered-note").textContent = `${rq.answered} of ${rq.total} requests, open and merged`;
+  // The other figures in this section count PRs; this one counts requests, which is a
+  // different and larger number -- two reviewers on one PR is two requests -- so the note
+  // spells out the denominator rather than leaving "97" to be reconciled against a PR count.
+  //
+  // Both tabs on purpose. The merged-only rate looks far better, but a PR only reaches
+  // "merged" once it has largely been reviewed, so that subset is selected for having been
+  // answered; the open-only rate has the mirror bias, since a reviewed PR tends to merge and
+  // leave the open queue. The combined figure is the one that is not picked either way.
+  $("#tf-answered-note").textContent =
+    `${rq.answered} of ${rq.total} — each reviewer asked counts once: ` +
+    `${rq.open.total} on open PRs, ${rq.merged.total} on merged`;
 
   $("#tf-merged-note").textContent = `${plural(m.prs, "merged PR carries", "merged PRs carry")} a task force request`;
   $("#tf-m-median").textContent = dur(m.medianDays);
@@ -452,20 +464,21 @@ function init() {
   // readers aren't. The name comes from the data, since TASK_FORCE_ASSIGNER is configurable.
   for (const n of document.querySelectorAll(".who")) n.textContent = DATA.assigner;
   for (const n of document.querySelectorAll(".months")) n.textContent = String(DATA.merged.months);
-  $("#tf-start").textContent = DATA.taskForceStart
-    ? new Date(`${DATA.taskForceStart}T00:00:00Z`).toLocaleDateString(undefined, {
-        year: "numeric", month: "long", day: "numeric", timeZone: "UTC",
-      })
-    : "the beginning";
+  $("#tf-start").textContent = startLabel({ year: "numeric", month: "long", day: "numeric" });
 
   const o = DATA.open.stats;
   $("#kpi-prs").textContent = o.prs;
   // Only worth a line when there are any; on a normal day this reads as one plain number.
-  if (o.drafts) $("#kpi-prs-note").textContent = `includes ${o.drafts} labelled draft${o.drafts === 1 ? "" : "s"}`;
+  if (o.drafts) {
+    $("#kpi-prs-note").textContent =
+      `includes ${o.drafts} ${o.draftLabel} draft${o.drafts === 1 ? "" : "s"}`;
+  }
   $("#kpi-mine").textContent = o.pendingMine;
-  $("#kpi-other").textContent = o.pending - o.pendingMine;
-  $("#kpi-nohook").textContent = o.noOneOnHook;
-  $("#kpi-nohook-note").textContent = `${o.unassigned} have no reviewer at all`;
+  $("#kpi-untriaged").textContent = o.untriaged;
+  $("#kpi-untriaged-since").textContent = startLabel({ month: "short", day: "numeric" });
+  $("#kpi-untriaged-note").textContent = o.untriagedNoReviewer
+    ? `${o.untriagedNoReviewer} have no reviewer at all`
+    : "";
 
   const m = DATA.merged.stats;
   $("#kpi-merged").textContent = m.prs;

@@ -277,11 +277,12 @@ function taskForceRequests(openPrs, mergedPrs) {
 // submissions are the exception: policy has them opened as drafts and they are still meant to
 // be reviewed, so for them the label -- not the draft flag -- decides. Matched case-insensitively
 // so a "jsag" label is not silently dropped.
-const REVIEW_READY_DRAFT_LABEL = "jsag";
+export const REVIEW_READY_DRAFT_LABEL = "JSAG";
 
 /** An open PR the dashboard tracks: any non-draft, plus a draft the review policy marks ready. */
 export const isReviewable = (pr) =>
-  !pr.isDraft || pr.labels.nodes.some((l) => l.name.toLowerCase() === REVIEW_READY_DRAFT_LABEL);
+  !pr.isDraft ||
+  pr.labels.nodes.some((l) => l.name.toLowerCase() === REVIEW_READY_DRAFT_LABEL.toLowerCase());
 
 const shape = (pr, me, start) => ({
   number: pr.number,
@@ -308,6 +309,9 @@ function reconcileOpen(rawPrs, me, start, now) {
   // pending reviewers is one PR waiting, and a PR the assigner picked counts as theirs even
   // if someone else also requested a reviewer on it -- the task force owns it either way.
   const isPending = (r) => r.state === "PENDING";
+  const untriaged = prs.filter(
+    (p) => (!start || p.createdAt >= start) && !p.reviewers.some((r) => r.origin === "mine"),
+  );
   const waiting = prs.filter((p) => p.reviewers.some(isPending));
   const pendingMine = waiting.filter((p) => p.reviewers.some((r) => isPending(r) && r.origin === "mine"));
 
@@ -320,6 +324,13 @@ function reconcileOpen(rawPrs, me, start, now) {
       // Drafts on the board, i.e. the JSAG ones. Worth naming: "open PRs" here is not the
       // number GitHub shows for non-drafts, and this is the whole difference.
       drafts: prs.filter((p) => p.isDraft).length,
+      draftLabel: REVIEW_READY_DRAFT_LABEL,
+      // The task force's own inbox: PRs that have arrived since it began and that the
+      // assigner has not put anybody on. Dated from the start deliberately -- the years of
+      // backlog before it are a different problem, and burying this number in them hides the
+      // one queue that can actually be kept at zero.
+      untriaged: untriaged.length,
+      untriagedNoReviewer: untriaged.filter((p) => p.reviewers.length === 0).length,
       // Two different gaps. `unassigned` is a PR nobody has touched at all. `noOneOnHook` also
       // catches the PR whose only reviewer volunteered a drive-by comment and owes nothing --
       // still nobody committed to reviewing it, so it's the real queue of work to hand out.

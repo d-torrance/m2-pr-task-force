@@ -43,15 +43,16 @@ table keeps all three origins apart, because load-balancing needs the detail.
 The page is public, so it names the assigner throughout rather than addressing a "you" that
 most readers aren't.
 
-## The two gap numbers
+## The triage number
 
-They measure different things and the difference matters:
+The open tab leads with **PRs opened since the start date that the assigner has not put anybody
+on** — the task force's own inbox, and the one queue that can be kept at zero. Dated from the
+start deliberately: M2 has open PRs going back four years, and mixing that backlog in buries the
+handful of new arrivals that actually need a decision this week.
 
-- **no reviewer at all** — nobody has touched the PR.
-- **nobody on the hook** — nobody owes it a review. Larger, because it also catches the PR
-  whose only reviewer left an unrequested drive-by comment and owes nothing further.
-
-The second is the queue of work to hand out.
+`data.json` still carries the wider gap numbers (`unassigned`, `noOneOnHook`, and the
+`pending` / `pendingMine` split), and the PR table can filter on them, but the headline row
+stays on the number that implies an action.
 
 ## How long things take
 

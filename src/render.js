@@ -257,10 +257,10 @@ export function render(data) {
       <div class="k">open PRs up for review <span class="k2" id="kpi-prs-note"></span></div>
     </div>
     <div class="kpi"><div class="v num" id="kpi-mine">–</div><div class="k">awaiting review — assigned by <span class="who">…</span></div></div>
-    <div class="kpi"><div class="v num" id="kpi-other">–</div><div class="k">awaiting review — assigned by others</div></div>
     <div class="kpi flag">
-      <div class="v num" id="kpi-nohook">–</div>
-      <div class="k">nobody on the hook <span class="k2" id="kpi-nohook-note"></span></div>
+      <div class="v num" id="kpi-untriaged">–</div>
+      <div class="k">opened since <span id="kpi-untriaged-since">…</span> with no reviewer from
+        <span class="who">…</span> <span class="k2" id="kpi-untriaged-note"></span></div>
     </div>
   </div>
 
@@ -275,7 +275,7 @@ export function render(data) {
       <div class="fig flag"><div class="v num" id="tf-stalled">–</div><div class="k">waiting over <span id="tf-stalled-days">30</span> days</div></div>
       <div class="fig">
         <div class="v num" id="tf-answered">–</div>
-        <div class="k">of all requests answered <span class="k2" id="tf-answered-note"></span></div>
+        <div class="k">of review requests answered <span class="k2" id="tf-answered-note"></span></div>
       </div>
     </div>
     <figure class="chart">
