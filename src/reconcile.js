@@ -75,6 +75,10 @@ function reviewersFor(pr, me, start) {
       origin: originOf(assigner, login, me, start),
       assignedBy: a?.actor ?? null,
       assignedAt: a?.at ?? null,
+      // Null while pending, even for someone who reviewed an earlier round and was then
+      // re-requested: that old timestamp predates the current request, so pairing the two
+      // would report a negative response time for a review that has not happened yet.
+      submittedAt: pending.has(login) ? null : (reviewed.get(login).submittedAt ?? null),
       isBot: actor.__typename === "Bot",
       isTeam: actor.__typename === "Team",
     });
@@ -145,6 +149,133 @@ function approvalsFrom(prs) {
   );
 }
 
+/* ------------------------------- how long ------------------------------------ */
+
+const DAY_MS = 86400000;
+const daysBetween = (from, to) => (Date.parse(to) - Date.parse(from)) / DAY_MS;
+const round1 = (n) => Math.round(n * 10) / 10;
+const earliest = (times) => times.reduce((a, b) => (a < b ? a : b));
+
+/**
+ * Median, never mean. These distributions are severely right-skewed -- one 721-day request
+ * sits in the same queue as one asked this morning -- and a mean would report a queue state
+ * that describes no actual PR. `null` for an empty set rather than 0, which would read as
+ * "answered instantly".
+ */
+function median(xs) {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return round1(s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2);
+}
+
+// Age bands rather than one summary number: the median wait can read as five weeks while
+// two thirds of the queue sits in a single 31+ pile, and only the bands show that shape.
+const WAIT_BANDS = [7, 14, 30];
+const BAND_LABELS = ["0–7d", "8–14d", "15–30d", "31d+"];
+const STALLED_DAYS = 30;
+
+const bandsOf = (values) =>
+  BAND_LABELS.map((label, i) => ({
+    label,
+    n: values.filter(
+      (v) => (i === 0 || v > WAIT_BANDS[i - 1]) && (i === WAIT_BANDS.length || v <= WAIT_BANDS[i]),
+    ).length,
+    // The last band is the one that matters; the page flags it rather than colouring by size.
+    stalled: i === WAIT_BANDS.length,
+  }));
+
+/**
+ * The task force's own queue on open PRs: how long its picks have been left unanswered.
+ *
+ * Counted per PR, matching the KPI row above it -- a PR with two pending picks is one PR
+ * waiting -- and measured from the OLDEST outstanding pick, which is how long the PR itself
+ * has been sitting on a request nobody answered.
+ */
+function openTaskForce(prs, now) {
+  const picked = prs.filter((pr) => pr.reviewers.some((r) => r.origin === "mine"));
+  const waits = [];
+  for (const pr of picked) {
+    const asked = pr.reviewers
+      .filter((r) => r.origin === "mine" && r.state === "PENDING" && r.assignedAt)
+      .map((r) => r.assignedAt);
+    if (asked.length) waits.push(round1(daysBetween(earliest(asked), now)));
+  }
+  return {
+    prs: picked.length,
+    waiting: waits.length,
+    answered: picked.length - waits.length,
+    medianDays: median(waits),
+    oldestDays: waits.length ? Math.max(...waits) : null,
+    stalled: waits.filter((w) => w > STALLED_DAYS).length,
+    stalledDays: STALLED_DAYS,
+    bands: bandsOf(waits),
+  };
+}
+
+/**
+ * What the picks delivered on merged PRs, measured assignment -> merge rather than
+ * open -> merge. PRs are picked up long after they were opened, and that pre-existing
+ * neglect is neither something the review effort caused nor something it could have fixed;
+ * charging it to the task force would make targeting stale PRs look like slowness.
+ */
+function mergedTaskForce(prs) {
+  const durations = prs
+    .filter((pr) => pr.mergedAt && pr.reviewers.some((r) => r.origin === "mine" && r.assignedAt))
+    .map((pr) => ({
+      number: pr.number,
+      days: round1(
+        daysBetween(
+          earliest(pr.reviewers.filter((r) => r.origin === "mine" && r.assignedAt).map((r) => r.assignedAt)),
+          pr.mergedAt,
+        ),
+      ),
+    }))
+    .sort((a, b) => a.days - b.days || a.number - b.number);
+
+  return {
+    prs: durations.length,
+    durations,
+    medianDays: median(durations.map((d) => d.days)),
+    withinTwoWeeks: durations.filter((d) => d.days <= 14).length,
+    // Merged with the request still outstanding: it shipped without the review ever arriving.
+    neverAnswered: prs.filter((pr) => pr.reviewers.some((r) => r.origin === "mine" && r.state === "PENDING"))
+      .length,
+  };
+}
+
+/**
+ * Every request the task force has made, across both tabs. Request-level on purpose: the
+ * question is whether asking somebody produces a review, and one PR can carry several asks.
+ *
+ * The open/merged split is reported but is not two success rates. A PR that reached "merged"
+ * has largely already been reviewed, so that subset is selected for having been answered and
+ * will always look better. The combined number is the honest one.
+ */
+function taskForceRequests(openPrs, mergedPrs) {
+  const tally = (prs) => {
+    const asked = prs.flatMap((pr) => pr.reviewers.filter((r) => r.origin === "mine" && r.assignedAt));
+    const answered = asked.filter((r) => r.state !== "PENDING");
+    return { total: asked.length, answered: answered.length, rows: answered };
+  };
+
+  const open = tally(openPrs);
+  const merged = tally(mergedPrs);
+  // A review that predates its own request belongs to an earlier round, not to this one.
+  const latencies = [...open.rows, ...merged.rows]
+    .filter((r) => r.submittedAt && r.submittedAt > r.assignedAt)
+    .map((r) => round1(daysBetween(r.assignedAt, r.submittedAt)));
+
+  return {
+    total: open.total + merged.total,
+    answered: open.answered + merged.answered,
+    medianResponseDays: median(latencies),
+    responded: latencies.length,
+    open: { total: open.total, answered: open.answered },
+    merged: { total: merged.total, answered: merged.answered },
+  };
+}
+
 // Draft normally means "not ready for review", which is why drafts stay off the board. JSAG
 // submissions are the exception: policy has them opened as drafts and they are still meant to
 // be reviewed, so for them the label -- not the draft flag -- decides. Matched case-insensitively
@@ -168,8 +299,8 @@ const shape = (pr, me, start) => ({
   reviewers: reviewersFor(pr, me, start),
 });
 
-/** Open PRs -> table rows, pending workload, and the two gap numbers. */
-function reconcileOpen(rawPrs, me, start) {
+/** Open PRs -> table rows, pending workload, the two gap numbers, and the wait times. */
+function reconcileOpen(rawPrs, me, start, now) {
   const prs = rawPrs
     .filter(isReviewable)
     .map((pr) => shape(pr, me, start))
@@ -186,6 +317,7 @@ function reconcileOpen(rawPrs, me, start) {
   return {
     prs,
     workload: workloadFrom(prs),
+    taskForce: openTaskForce(prs, now),
     stats: {
       prs: prs.length,
       // Drafts on the board, i.e. the JSAG ones. Worth naming: "open PRs" here is not the
@@ -209,6 +341,7 @@ function reconcileMerged(rawPrs, me, start, { since, months }) {
     .sort((a, b) => (a.mergedAt < b.mergedAt ? 1 : a.mergedAt > b.mergedAt ? -1 : b.number - a.number));
 
   const approvals = approvalsFrom(prs);
+  const taskForce = mergedTaskForce(prs);
   const approved = prs.filter((p) => p.reviewers.some((r) => r.state === "APPROVED"));
 
   return {
@@ -216,6 +349,7 @@ function reconcileMerged(rawPrs, me, start, { since, months }) {
     months,
     prs,
     approvals,
+    taskForce,
     stats: {
       prs: prs.length,
       approved: approved.length,
@@ -234,12 +368,22 @@ export function reconcile(
   { open: rawOpen, merged: rawMerged = [], since = null, months = 3 },
   { me, repo, start = null, generatedAt = new Date().toISOString() },
 ) {
+  const open = reconcileOpen(rawOpen, me, start, generatedAt);
+  const merged = reconcileMerged(rawMerged, me, start, { since, months });
   return {
     generatedAt,
     repo,
     assigner: me,
     taskForceStart: start,
-    open: reconcileOpen(rawOpen, me, start),
-    merged: reconcileMerged(rawMerged, me, start, { since, months }),
+    taskForce: {
+      // Every duration on the page is capped by the age of the effort itself: a request
+      // cannot have gone unanswered for longer than the task force has existed. The medians
+      // will keep climbing while that ceiling lifts, which is not the queue getting worse,
+      // so the page says so rather than leaving a reader to infer a trend.
+      ageDays: start ? Math.floor(daysBetween(`${start}T00:00:00Z`, generatedAt)) : null,
+      requests: taskForceRequests(open.prs, merged.prs),
+    },
+    open,
+    merged,
   };
 }

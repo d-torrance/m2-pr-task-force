@@ -198,6 +198,127 @@ function drawPrs(key) {
   }
 }
 
+/* ------------------------------- Wait times ----------------------------------- */
+
+// Sub-day precision is noise at this scale, but rounding 0.7 days to "1d" overstates and
+// rounding it to "0d" reads as instant, so the sub-day case gets its own words.
+const dur = (d) => (d == null ? "—" : d < 1 ? "<1d" : `${Math.round(d)}d`);
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+// Axis ticks land on round numbers, at most five gaps, so the reader can place a dot without
+// arithmetic. Step from a fixed ladder rather than max/5, which yields ticks like 9 and 18.
+const TICK_STEPS = [5, 10, 15, 30, 60, 90, 180, 365];
+function axisFor(max) {
+  const step = TICK_STEPS.find((s) => max / s <= 5) ?? TICK_STEPS.at(-1);
+  const end = Math.max(step, Math.ceil(max / step) * step);
+  const ticks = [];
+  for (let v = 0; v <= end; v += step) ticks.push(v);
+  return { end, ticks };
+}
+
+function drawHistogram() {
+  const tf = DATA.open.taskForce;
+  const max = Math.max(1, ...tf.bands.map((b) => b.n));
+  $("#tf-hist").replaceChildren(
+    ...tf.bands.map((b) => {
+      const row = el("div", "hist-row");
+      row.dataset.stalled = String(b.stalled);
+      const track = el("div", "bar");
+      const fill = el("div", "bar-fill");
+      fill.style.width = `${(b.n / max) * 100}%`;
+      track.append(fill);
+      const v = el("span", "hist-v num", String(b.n));
+      v.style.left = `${(b.n / max) * 100}%`;
+      track.append(v);
+      row.append(el("span", "hist-k", b.label), track);
+      row.title = `${plural(b.n, "PR", "PRs")} waiting ${b.label.replace("d+", " days or more").replace("d", " days")}`;
+      return row;
+    }),
+  );
+}
+
+function drawStrip() {
+  const tf = DATA.merged.taskForce;
+  const strip = $("#tf-strip");
+  const axis = $("#tf-strip-axis");
+  if (!tf.durations.length) {
+    strip.replaceChildren(el("span", "none", "No merged PRs carry a task force request yet."));
+    axis.replaceChildren();
+    return;
+  }
+
+  const { end, ticks } = axisFor(Math.max(...tf.durations.map((d) => d.days)));
+  const at = (v) => `${(v / end) * 100}%`;
+  const parts = [el("div", "strip-base")];
+  for (const t of ticks) {
+    const g = el("div", "strip-tick");
+    g.style.left = at(t);
+    parts.push(g);
+  }
+  for (const d of tf.durations) {
+    const dot = el("div", "strip-dot");
+    dot.style.left = at(d.days);
+    dot.title = `#${d.number} — merged ${dur(d.days)} after the request`;
+    parts.push(dot);
+  }
+  if (tf.medianDays != null) {
+    const line = el("div", "strip-med");
+    line.style.left = at(tf.medianDays);
+    const label = el("span", "strip-med-k", `median ${dur(tf.medianDays)}`);
+    label.style.left = at(tf.medianDays);
+    // Flips to the inside near the right edge rather than running off the chart.
+    label.dataset.side = tf.medianDays / end > 0.7 ? "left" : "right";
+    parts.push(line, label);
+  }
+  strip.replaceChildren(...parts);
+
+  axis.replaceChildren(
+    ...ticks.map((t) => {
+      const n = el("span", null, t === 0 ? "0" : String(t));
+      n.style.left = at(t);
+      return n;
+    }),
+  );
+}
+
+function drawWaitTimes() {
+  const o = DATA.open.taskForce;
+  const m = DATA.merged.taskForce;
+  const rq = DATA.taskForce.requests;
+
+  $("#tf-open-note").textContent =
+    `${o.prs} open PRs carry a request from ${DATA.assigner}; ${o.answered} have been answered`;
+  $("#tf-waiting").textContent = o.waiting;
+  $("#tf-median").textContent = dur(o.medianDays);
+  $("#tf-stalled").textContent = o.stalled;
+  $("#tf-stalled-days").textContent = String(o.stalledDays);
+  $("#tf-answered").textContent = rq.total ? `${Math.round((100 * rq.answered) / rq.total)}%` : "—";
+  // Deliberately the combined figure. The merged-only rate looks far better, but a PR only
+  // reaches "merged" once it has largely been reviewed, so that subset is selected for
+  // having been answered -- quoting it as a response rate would flatter the effort.
+  $("#tf-answered-note").textContent = `${rq.answered} of ${rq.total} requests, open and merged`;
+
+  $("#tf-merged-note").textContent = `${plural(m.prs, "merged PR carries", "merged PRs carry")} a task force request`;
+  $("#tf-m-median").textContent = dur(m.medianDays);
+  $("#tf-m-fast").textContent = m.prs ? `${m.withinTwoWeeks} of ${m.prs}` : "—";
+  $("#tf-m-never").textContent = m.neverAnswered;
+  $("#tf-m-response").textContent = dur(rq.medianResponseDays);
+
+  // Every duration on this page is capped by the age of the effort, so both charts say so.
+  // Without it a rising median reads as a worsening queue rather than a lifting ceiling.
+  const age = DATA.taskForce.ageDays;
+  if (age != null) {
+    $("#tf-ceiling").textContent =
+      `The task force is ${age} days old, so no wait here can exceed ${age} days. ` +
+      `While that ceiling keeps lifting, a rising median is not by itself the queue getting worse.`;
+  }
+  $("#tf-strip-cap").textContent =
+    (m.neverAnswered
+      ? `${plural(m.neverAnswered, "PR", "PRs")} merged with the request still outstanding — counted here, since the PR shipped, but no review ever arrived. `
+      : "") +
+    (age != null ? `Durations are capped at the age of the task force (${age} days).` : "");
+}
+
 /* ------------------------------- Bottom tables -------------------------------- */
 
 // One series per table (the number the table is ranked by), so each bar is a single
@@ -385,6 +506,10 @@ function init() {
       });
     }
   }
+
+  drawWaitTimes();
+  drawHistogram();
+  drawStrip();
 
   wireFilters("open");
   wireFilters("merged");

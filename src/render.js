@@ -159,6 +159,55 @@ tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transp
 #a-table td { border-bottom: 1px solid var(--grid); }
 #a-table th:not(:first-child), #a-table td:not(:first-child) { width: 28%; }
 
+/* Figure rows inside a section: the same stat-tile contract as the KPI row, one level
+   quieter, since these answer a follow-up question rather than leading the page. */
+.figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px 20px; padding: 14px 16px; }
+.fig .v { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.2; }
+.fig .k { color: var(--text-secondary); font-size: 12px; }
+.fig .k2 { display: block; color: var(--text-muted); font-size: 11px; }
+.fig.flag .v { color: var(--serious); }
+
+figure.chart { margin: 0; padding: 4px 16px 16px; border-top: 1px solid var(--grid); }
+figure.chart figcaption { color: var(--text-secondary); font-size: 12px; margin: 10px 0 12px; }
+figure.chart .cap { color: var(--text-muted); font-size: 11px; margin: 14px 0 0; max-width: 84ch; }
+
+/* One series, so one hue and no legend -- the caption names what is plotted. Bars grow from
+   a single left baseline: square where they start, rounded only at the data end. */
+.hist { display: grid; gap: 6px; }
+.hist-row { display: grid; grid-template-columns: 62px 1fr; align-items: center; gap: 10px; }
+.hist-k { color: var(--text-secondary); font-size: 12px; text-align: right; white-space: nowrap; }
+/* The count rides its own bar's tip. Parked in a right-hand column it would sit an inch of
+   whitespace away from a short bar, and the reader has to work out which number is which.
+   The reserved margin is what the longest bar's label sits in. */
+.hist .bar { position: relative; height: 14px; margin-right: 34px; }
+.hist .bar-fill { border-radius: 0 4px 4px 0; }
+/* The last band is the finding, not merely the biggest number: it earns the status hue, and
+   its own label says "31d+" so the meaning never rests on colour alone. */
+.hist-row[data-stalled="true"] .bar-fill { background: var(--serious); }
+.hist-v {
+  position: absolute; top: 50%; transform: translateY(-50%); margin-left: 8px;
+  color: var(--text-primary); font-size: 12px; font-weight: 620;
+}
+
+/* A strip of dots on one axis: 12 values, so show all 12 rather than a summary of them. */
+.strip { position: relative; height: 46px; }
+.strip-tick { position: absolute; top: 0; bottom: 14px; width: 1px; background: var(--grid); }
+.strip-base { position: absolute; left: 0; right: 0; bottom: 14px; height: 1px; background: var(--axis); }
+.strip-dot {
+  position: absolute; bottom: 8px; width: 10px; height: 10px; margin-left: -5px;
+  border-radius: 50%; background: var(--series-1);
+  /* A surface ring, not a border: dots overlap where PRs merged on similar timelines, and
+     the ring is what keeps two of them from reading as one. */
+  box-shadow: 0 0 0 2px var(--surface-1);
+}
+/* The rule starts below its own label rather than through it. */
+.strip-med { position: absolute; top: 17px; bottom: 14px; width: 2px; margin-left: -1px; background: var(--text-primary); }
+.strip-med-k { position: absolute; top: 0; font-size: 11px; font-weight: 620; color: var(--text-primary); white-space: nowrap; }
+.strip-med-k[data-side="right"] { margin-left: 6px; }
+.strip-med-k[data-side="left"] { transform: translateX(-100%); margin-left: -6px; }
+.strip-axis { position: relative; height: 16px; }
+.strip-axis span { position: absolute; font-size: 11px; color: var(--text-muted); transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+
 .filters { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--grid); }
 input, select, button {
   font: inherit; font-size: 13px; color: var(--text-primary);
@@ -214,6 +263,27 @@ export function render(data) {
       <div class="k">nobody on the hook <span class="k2" id="kpi-nohook-note"></span></div>
     </div>
   </div>
+
+  <section>
+    <div class="head">
+      <h2>Waiting on a task force pick</h2>
+      <span class="note" id="tf-open-note"></span>
+    </div>
+    <div class="figs">
+      <div class="fig"><div class="v num" id="tf-waiting">–</div><div class="k">PRs with a pick still unanswered</div></div>
+      <div class="fig"><div class="v num" id="tf-median">–</div><div class="k">median wait since the request</div></div>
+      <div class="fig flag"><div class="v num" id="tf-stalled">–</div><div class="k">waiting over <span id="tf-stalled-days">30</span> days</div></div>
+      <div class="fig">
+        <div class="v num" id="tf-answered">–</div>
+        <div class="k">of all requests answered <span class="k2" id="tf-answered-note"></span></div>
+      </div>
+    </div>
+    <figure class="chart">
+      <figcaption>How long the unanswered requests have been waiting</figcaption>
+      <div class="hist" id="tf-hist"></div>
+      <p class="cap" id="tf-ceiling"></p>
+    </figure>
+  </section>
 
   <section>
     <div class="head">
@@ -277,6 +347,25 @@ export function render(data) {
     <div class="kpi"><div class="v num" id="kpi-unapproved">–</div><div class="k">merged with no approval</div></div>
     <div class="kpi"><div class="v num" id="kpi-taskforce">–</div><div class="k">approved by a task force selection</div></div>
   </div>
+
+  <section>
+    <div class="head">
+      <h2>From assignment to merge</h2>
+      <span class="note" id="tf-merged-note"></span>
+    </div>
+    <div class="figs">
+      <div class="fig"><div class="v num" id="tf-m-median">–</div><div class="k">median from request to merge</div></div>
+      <div class="fig"><div class="v num" id="tf-m-fast">–</div><div class="k">merged within two weeks of the request</div></div>
+      <div class="fig"><div class="v num" id="tf-m-never">–</div><div class="k">merged with the request never answered</div></div>
+      <div class="fig"><div class="v num" id="tf-m-response">–</div><div class="k">median time to a review, when one came</div></div>
+    </div>
+    <figure class="chart">
+      <figcaption>Days from the task force request to the merge — one dot per pull request</figcaption>
+      <div class="strip" id="tf-strip"></div>
+      <div class="strip-axis" id="tf-strip-axis"></div>
+      <p class="cap" id="tf-strip-cap"></p>
+    </figure>
+  </section>
 
   <section>
     <div class="head">

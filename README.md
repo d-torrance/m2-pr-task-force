@@ -53,6 +53,28 @@ They measure different things and the difference matters:
 
 The second is the queue of work to hand out.
 
+## How long things take
+
+Both tabs carry timing stats, scoped to the task force's own requests. Three deliberate choices:
+
+- **Median, never mean.** The waits are severely right-skewed — a request from this morning
+  shares the queue with one from 2024 — and a mean would describe no actual PR.
+- **Age bands, not just the median.** The median wait can read as five weeks while two thirds
+  of the queue sits in a single `31d+` pile. Only the bands show that, and the last band is the
+  one the page flags.
+- **Assignment → merge, not opened → merged.** PRs are picked up long after they were opened,
+  so opened → merged charges the task force for neglect that predates it: measured that way its
+  PRs look ~13× *slower* than a typical merge, purely because it targets stale ones.
+
+Two caveats the page states outright, rather than leaving a reader to infer:
+
+- **Every duration is capped by the age of the effort.** A request cannot have gone unanswered
+  for longer than the task force has existed, so the medians keep climbing while that ceiling
+  lifts. A rising median is not by itself a worsening queue.
+- **The merged-only response rate is not a success rate.** A PR reaching "merged" has largely
+  been reviewed already, so that subset is selected for having been answered — it will always
+  look better than the open queue. The page leads with the combined figure.
+
 ## Usage
 
 Requires Node 18+ (for built-in `fetch`) and nothing else — no dependencies, no lockfile.
@@ -99,10 +121,10 @@ generation time and flags a snapshot older than two days.
 |---|---|
 | `build.js` | fetch → reconcile → render |
 | `src/query.js` | GraphQL document, pagination, token resolution |
-| `src/reconcile.js` | timeline replay, origins, workload |
+| `src/reconcile.js` | timeline replay, origins, workload, wait times |
 | `src/render.js` | HTML + CSS shell |
 | `src/page.js` | client-side sort/filter, inlined into the page |
-| `test/` | attribution tests over a synthetic fixture |
+| `test/` | attribution and timing tests over a synthetic fixture |
 
 [m2]: https://github.com/Macaulay2/M2
 [gh]: https://cli.github.com/

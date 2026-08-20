@@ -41,11 +41,22 @@ console.log(`  ${o.pending} PRs awaiting review — ${o.pendingMine} with a task
 console.log(`  ${o.noOneOnHook} PRs with nobody on the hook (${o.unassigned} with no reviewer at all)`);
 console.log(`  ${data.open.workload.length} reviewers`);
 
+const t = data.open.taskForce;
+const rq = data.taskForce.requests;
+console.log(`\ntask force waits (${data.taskForce.ageDays} days in):`);
+console.log(`  ${t.waiting} of ${t.prs} picked PRs still unanswered — median ${t.medianDays}d, oldest ${t.oldestDays}d`);
+console.log(`  ${t.stalled} waiting over ${t.stalledDays} days — bands ${t.bands.map((x) => `${x.label}:${x.n}`).join(" ")}`);
+console.log(`  ${rq.answered}/${rq.total} requests answered — median ${rq.medianResponseDays}d to a review when one came`);
+
 const m = data.merged.stats;
 console.log(`\nmerged since ${since} (${MONTHS} months):`);
 console.log(`  ${m.prs} merged — ${m.approved} carried an approval, ${m.unapproved} none`);
 console.log(`  ${m.taskForce} merged with an approval from a task force pick`);
 console.log(`  ${data.merged.approvals.length} reviewers`);
+
+const mt = data.merged.taskForce;
+console.log(`  ${mt.prs} carried a task force request — median ${mt.medianDays}d from request to merge, ${mt.withinTwoWeeks} within two weeks`);
+console.log(`  ${mt.neverAnswered} merged with the request never answered`);
 
 await mkdir(OUT, { recursive: true });
 await writeFile(new URL("index.html", OUT), render(data));

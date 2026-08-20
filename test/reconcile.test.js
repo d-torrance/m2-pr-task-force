@@ -210,6 +210,88 @@ test("reviewers who only commented are listed with zero approvals, not dropped",
   assert.equal(appr(data, "dave").approved, 0);
 });
 
+/* -------------------------------- wait times --------------------------------- */
+
+test("a PR's wait runs from its oldest outstanding pick, measured against the snapshot", () => {
+  const tf = data.open.taskForce;
+  assert.equal(tf.waiting, 5);
+  // #101's request (2026-06-04) is the oldest still unanswered, 41 days before generatedAt.
+  assert.equal(tf.oldestDays, 41);
+  assert.equal(tf.medianDays, 24); // waits of 11, 13, 24, 34 and 41 days
+  assert.equal(tf.prs, tf.waiting + tf.answered);
+});
+
+test("the age bands partition the waiting queue, and the last band is the stalled count", () => {
+  const tf = data.open.taskForce;
+  assert.deepEqual(
+    tf.bands.map((b) => b.n),
+    [0, 2, 1, 2],
+  );
+  assert.equal(tf.bands.reduce((n, b) => n + b.n, 0), tf.waiting);
+  // Exactly one band is flagged, and it is the >30d one the stalled figure counts.
+  assert.deepEqual(tf.bands.filter((b) => b.stalled).map((b) => b.n), [tf.stalled]);
+});
+
+test("the cutoff pulls waits out of the task force queue, as it does everything else", () => {
+  // #101 and #103 were requested before the task force began, so their long waits are
+  // somebody else's history -- not a queue this effort is sitting on.
+  assert.equal(cut.open.taskForce.waiting, 2);
+  assert.equal(cut.open.taskForce.stalled, 0);
+});
+
+test("assignment -> merge is measured from the request, not from the PR opening", () => {
+  const m = data.merged.taskForce;
+  assert.deepEqual(m.durations, [
+    { number: 200, days: 6 },
+    { number: 203, days: 6 },
+    { number: 201, days: 18 },
+  ]);
+  // #201 opened 2026-05-01 and merged 2026-05-20: 19 days on the calendar, but the task
+  // force only had it for 18 of them, and the day it sat unassigned is not its to answer for.
+  assert.equal(mpr(201).createdAt, "2026-05-01T00:00:00Z");
+  assert.equal(m.medianDays, 6);
+  assert.equal(m.withinTwoWeeks, 2);
+});
+
+test("a merged PR whose request was never answered still counts", () => {
+  // #203 shipped with carol's request outstanding. Dropping it would quietly restrict every
+  // duration on the page to the PRs that went well.
+  assert.equal(data.merged.taskForce.neverAnswered, 1);
+  assert.ok(data.merged.taskForce.durations.some((d) => d.number === 203));
+});
+
+test("submittedAt is null while pending, even for someone who reviewed an earlier round", () => {
+  // alice reviewed #103 and was then re-requested; that old review predates the new request.
+  assert.equal(rev(103, "alice").state, "PENDING");
+  assert.equal(rev(103, "alice").submittedAt, null);
+  assert.equal(rev(100, "carol").submittedAt, "2026-07-09T00:00:00Z");
+});
+
+test("response rate is request-level, and the two tabs sum to the whole", () => {
+  const rq = data.taskForce.requests;
+  assert.equal(rq.total, 8);
+  assert.equal(rq.answered, 2);
+  assert.equal(rq.open.total + rq.merged.total, rq.total);
+  assert.equal(rq.open.answered + rq.merged.answered, rq.answered);
+  assert.equal(rq.medianResponseDays, 11); // alice answered in 5 days, bob in 17
+});
+
+test("a review stamped before its own request contributes no response time", () => {
+  const backwards = JSON.parse(JSON.stringify(raw));
+  backwards.merged.find((p) => p.number === 200).latestReviews.nodes[0].submittedAt =
+    "2026-01-01T00:00:00Z";
+  const d = reconcile({ ...backwards, since: "2026-04-15", months: 3 }, opts);
+  // Still an answered request -- they did review -- but not a negative latency.
+  assert.equal(d.taskForce.requests.answered, 2);
+  assert.equal(d.taskForce.requests.responded, 1);
+  assert.equal(d.taskForce.requests.medianResponseDays, 17);
+});
+
+test("the ceiling on every duration is the age of the effort, and needs a start date", () => {
+  assert.equal(data.taskForce.ageDays, null); // no start configured
+  assert.equal(cut.taskForce.ageDays, 14); // 2026-07-01 -> the 2026-07-15 snapshot
+});
+
 /* --------------------------------- internals --------------------------------- */
 
 test("replayAssignments is order-independent and records when", () => {
