@@ -238,9 +238,6 @@ function mergedTaskForce(prs) {
     durations,
     medianDays: median(durations.map((d) => d.days)),
     withinTwoWeeks: durations.filter((d) => d.days <= 14).length,
-    // Merged with the request still outstanding: it shipped without the review ever arriving.
-    neverAnswered: prs.filter((pr) => pr.reviewers.some((r) => r.origin === "mine" && r.state === "PENDING"))
-      .length,
   };
 }
 

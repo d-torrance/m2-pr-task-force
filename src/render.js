@@ -356,7 +356,6 @@ export function render(data) {
     <div class="figs">
       <div class="fig"><div class="v num" id="tf-m-median">–</div><div class="k">median from request to merge</div></div>
       <div class="fig"><div class="v num" id="tf-m-fast">–</div><div class="k">merged within two weeks of the request</div></div>
-      <div class="fig"><div class="v num" id="tf-m-never">–</div><div class="k">merged with the request never answered</div></div>
       <div class="fig"><div class="v num" id="tf-m-response">–</div><div class="k">median time to a review, when one came</div></div>
     </div>
     <figure class="chart">

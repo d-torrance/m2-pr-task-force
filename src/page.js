@@ -306,7 +306,6 @@ function drawWaitTimes() {
   $("#tf-merged-note").textContent = `${plural(m.prs, "merged PR carries", "merged PRs carry")} a task force request`;
   $("#tf-m-median").textContent = dur(m.medianDays);
   $("#tf-m-fast").textContent = m.prs ? `${m.withinTwoWeeks} of ${m.prs}` : "—";
-  $("#tf-m-never").textContent = m.neverAnswered;
   $("#tf-m-response").textContent = dur(rq.medianResponseDays);
 
   // Every duration on this page is capped by the age of the effort, so both charts say so.
@@ -318,10 +317,7 @@ function drawWaitTimes() {
       `While that ceiling keeps lifting, a rising median is not by itself the queue getting worse.`;
   }
   $("#tf-strip-cap").textContent =
-    (m.neverAnswered
-      ? `${plural(m.neverAnswered, "PR", "PRs")} merged with the request still outstanding — counted here, since the PR shipped, but no review ever arrived. `
-      : "") +
-    (age != null ? `Durations are capped at the age of the task force (${age} days).` : "");
+    age != null ? `Durations are capped at the age of the task force (${age} days).` : "";
 }
 
 /* ------------------------------- Bottom tables -------------------------------- */

@@ -56,7 +56,6 @@ console.log(`  ${data.merged.approvals.length} reviewers`);
 
 const mt = data.merged.taskForce;
 console.log(`  ${mt.prs} carried a task force request — median ${mt.medianDays}d from request to merge, ${mt.withinTwoWeeks} within two weeks`);
-console.log(`  ${mt.neverAnswered} merged with the request never answered`);
 
 await mkdir(OUT, { recursive: true });
 await writeFile(new URL("index.html", OUT), render(data));

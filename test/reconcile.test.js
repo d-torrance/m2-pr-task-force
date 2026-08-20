@@ -253,11 +253,12 @@ test("assignment -> merge is measured from the request, not from the PR opening"
   assert.equal(m.withinTwoWeeks, 2);
 });
 
-test("a merged PR whose request was never answered still counts", () => {
-  // #203 shipped with carol's request outstanding. Dropping it would quietly restrict every
-  // duration on the page to the PRs that went well.
-  assert.equal(data.merged.taskForce.neverAnswered, 1);
+test("a PR the reviewer never got to is still in the distribution", () => {
+  // #203 merged with carol's request outstanding. It belongs in the durations anyway:
+  // restricting them to PRs a requested reviewer actually reviewed would quietly measure
+  // only the ones that went well.
   assert.ok(data.merged.taskForce.durations.some((d) => d.number === 203));
+  assert.equal(mpr(203).reviewers.find((r) => r.login === "carol").state, "PENDING");
 });
 
 test("submittedAt is null while pending, even for someone who reviewed an earlier round", () => {
