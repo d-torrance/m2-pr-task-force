@@ -134,10 +134,12 @@ tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transp
    greyscale, print, and CVD rather than resting on weight and color alone. It is deliberately
    absent on bots, whom the assigner may well have requested. NBSP: a plain space collapses. */
 .rv-other .rv-name::before { content: "\\00b7\\00a0"; }
-.rv-bot {
+/* Same quiet outline for both: a factual marker on the row, not a state worth a hue. */
+.rv-bot, .draft {
   font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em;
   color: var(--text-muted); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px;
 }
+.draft { margin-left: 5px; vertical-align: 1px; }
 .badge { font-size: 10px; font-weight: 600; color: var(--text-muted); }
 /* Only exceptional states earn a hue; pending is the majority and stays neutral.
    Each badge carries its own word, so color never conveys state alone. */
@@ -201,7 +203,10 @@ export function render(data) {
 
 <div id="panel-open" role="tabpanel">
   <div class="kpis">
-    <div class="kpi"><div class="v num" id="kpi-prs">–</div><div class="k">open non-draft PRs</div></div>
+    <div class="kpi">
+      <div class="v num" id="kpi-prs">–</div>
+      <div class="k">open PRs up for review <span class="k2" id="kpi-prs-note"></span></div>
+    </div>
     <div class="kpi"><div class="v num" id="kpi-mine">–</div><div class="k">awaiting review — assigned by <span class="who">…</span></div></div>
     <div class="kpi"><div class="v num" id="kpi-other">–</div><div class="k">awaiting review — assigned by others</div></div>
     <div class="kpi flag">

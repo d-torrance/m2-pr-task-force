@@ -145,10 +145,21 @@ function approvalsFrom(prs) {
   );
 }
 
+// Draft normally means "not ready for review", which is why drafts stay off the board. JSAG
+// submissions are the exception: policy has them opened as drafts and they are still meant to
+// be reviewed, so for them the label -- not the draft flag -- decides. Matched case-insensitively
+// so a "jsag" label is not silently dropped.
+const REVIEW_READY_DRAFT_LABEL = "jsag";
+
+/** An open PR the dashboard tracks: any non-draft, plus a draft the review policy marks ready. */
+export const isReviewable = (pr) =>
+  !pr.isDraft || pr.labels.nodes.some((l) => l.name.toLowerCase() === REVIEW_READY_DRAFT_LABEL);
+
 const shape = (pr, me, start) => ({
   number: pr.number,
   title: pr.title,
   url: pr.url,
+  isDraft: Boolean(pr.isDraft),
   author: loginOf(pr.author) ?? "(ghost)",
   createdAt: pr.createdAt,
   updatedAt: pr.updatedAt,
@@ -160,7 +171,7 @@ const shape = (pr, me, start) => ({
 /** Open PRs -> table rows, pending workload, and the two gap numbers. */
 function reconcileOpen(rawPrs, me, start) {
   const prs = rawPrs
-    .filter((pr) => !pr.isDraft)
+    .filter(isReviewable)
     .map((pr) => shape(pr, me, start))
     .sort((a, b) => b.number - a.number);
 
@@ -177,6 +188,9 @@ function reconcileOpen(rawPrs, me, start) {
     workload: workloadFrom(prs),
     stats: {
       prs: prs.length,
+      // Drafts on the board, i.e. the JSAG ones. Worth naming: "open PRs" here is not the
+      // number GitHub shows for non-drafts, and this is the whole difference.
+      drafts: prs.filter((p) => p.isDraft).length,
       // Two different gaps. `unassigned` is a PR nobody has touched at all. `noOneOnHook` also
       // catches the PR whose only reviewer volunteered a drive-by comment and owes nothing --
       // still nobody committed to reviewing it, so it's the real queue of work to hand out.

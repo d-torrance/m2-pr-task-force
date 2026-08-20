@@ -32,6 +32,54 @@
       }
     },
     {
+      "comment": "A draft, but labelled JSAG -- opened as a draft by policy and still up for review.",
+      "number": 106,
+      "title": "A JSAG draft",
+      "url": "https://example.invalid/106",
+      "isDraft": true,
+      "createdAt": "2026-07-03T00:00:00Z",
+      "updatedAt": "2026-07-09T00:00:00Z",
+      "author": {
+        "login": "student"
+      },
+      "labels": {
+        "nodes": [
+          {
+            "name": "JSAG",
+            "color": "5319e7"
+          }
+        ]
+      },
+      "reviewRequests": {
+        "nodes": [
+          {
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "erin"
+            }
+          }
+        ]
+      },
+      "latestReviews": {
+        "nodes": []
+      },
+      "timelineItems": {
+        "nodes": [
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-07-04T00:00:00Z",
+            "actor": {
+              "login": "me"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "erin"
+            }
+          }
+        ]
+      }
+    },
+    {
       "comment": "All three origins on one PR: mine pending, other's pending, and a volunteer who reviewed.",
       "number": 100,
       "title": "Three origins",

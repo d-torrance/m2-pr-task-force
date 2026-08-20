@@ -19,15 +19,31 @@ const appr = (d, login) => d.merged.approvals.find((a) => a.login === login);
 
 /* --------------------------------- open tab ---------------------------------- */
 
-test("drafts are excluded", () => {
+test("an unlabelled draft is excluded", () => {
   assert.equal(pr(900), undefined);
-  assert.equal(data.open.stats.prs, 6);
+  assert.equal(data.open.stats.prs, 7);
+});
+
+test("a JSAG draft is listed -- policy opens them as drafts, but they want review", () => {
+  assert.equal(pr(106).isDraft, true);
+  assert.equal(data.open.stats.drafts, 1);
+  // And it carries its full assignment data, exactly like any other row.
+  assert.equal(rev(106, "erin").origin, "mine");
+  assert.equal(who("erin").mine, 1);
+});
+
+test("the JSAG label matches whatever its casing", () => {
+  const lower = JSON.parse(JSON.stringify(raw));
+  const draft = lower.open.find((p) => p.number === 106);
+  draft.labels.nodes[0].name = "jsag";
+  const d = reconcile({ ...lower, since: "2026-04-15", months: 3 }, opts);
+  assert.ok(d.open.prs.some((p) => p.number === 106));
 });
 
 test("PRs are listed newest first", () => {
   assert.deepEqual(
     data.open.prs.map((p) => p.number),
-    [105, 104, 103, 102, 101, 100],
+    [106, 105, 104, 103, 102, 101, 100],
   );
 });
 

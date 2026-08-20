@@ -98,6 +98,13 @@ function prRow(pr, view) {
   a.href = pr.url;
   a.rel = "noopener";
   num.append(a);
+  // A draft is on the board only because the review policy put it there (the JSAG label).
+  // The marker keeps that visible, so a draft is never mistaken for a finished PR.
+  if (pr.isDraft) {
+    const d = el("span", "draft", "draft");
+    d.title = "Draft — listed because it is labelled for review";
+    num.append(d);
+  }
 
   const title = el("td", "col-title", pr.title);
   title.title = pr.title;
@@ -331,6 +338,8 @@ function init() {
 
   const o = DATA.open.stats;
   $("#kpi-prs").textContent = o.prs;
+  // Only worth a line when there are any; on a normal day this reads as one plain number.
+  if (o.drafts) $("#kpi-prs-note").textContent = `includes ${o.drafts} labelled draft${o.drafts === 1 ? "" : "s"}`;
   $("#kpi-mine").textContent = o.pendingMine;
   $("#kpi-other").textContent = o.pending - o.pendingMine;
   $("#kpi-nohook").textContent = o.noOneOnHook;
