@@ -5,7 +5,7 @@ viewer_login=$(gh api user --jq '.login')
 
 gh pr list -R Macaulay2/M2 \
   --state=all \
-  --search 'review-requested:@me OR reviewed-by:@me' \
+  --search "review-involves:$viewer_login" \
   --limit 100 \
   --json number,title,state,labels,updatedAt,reviewRequests,reviews \
   --template '{{- $viewer := "'"$viewer_login"'" -}}
