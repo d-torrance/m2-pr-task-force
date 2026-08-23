@@ -330,12 +330,19 @@ function drawWaitTimes() {
 
 // One series per table (the number the table is ranked by), so each bar is a single
 // sequential hue and needs no legend.
-function bar(value, max) {
+// `segments` splits the bar into ordinal stages of the same measure, drawn in order; without
+// it the bar is one fill. Zero-length segments are skipped rather than drawn empty, which is
+// also what lets the CSS give the last one the rounded data end.
+function bar(value, max, segments) {
   const td = el("td", "w-bar");
   const track = el("div", "bar");
-  const fill = el("div", "bar-fill");
-  fill.style.width = `${(value / max) * 100}%`;
-  track.append(fill);
+  for (const [i, seg] of (segments ?? [{ value }]).entries()) {
+    if (!seg.value) continue;
+    const fill = el("div", `bar-fill${segments ? ` seg-${i + 1}` : ""}`);
+    fill.style.width = `${(seg.value / max) * 100}%`;
+    if (seg.title) fill.title = seg.title;
+    track.append(fill);
+  }
   td.append(el("span", "num", String(value)), track);
   return td;
 }
@@ -355,7 +362,7 @@ function drawTable({ table, body, rows, sortKey, dir, keys, cols }) {
       const tr = el("tr");
       tr.append(el("td", "w-name", r.login));
       for (const c of cols) {
-        tr.append(c.bar ? bar(r[c.key], max) : el("td", "num dim", String(r[c.key])));
+        tr.append(c.bar ? bar(r[c.key], max, c.segments?.(r)) : el("td", "num dim", String(r[c.key])));
       }
       return tr;
     }),
@@ -379,7 +386,19 @@ const drawWorkload = () =>
       waiting: (r) => r.waiting,
       started: (r) => r.started,
     },
-    cols: [{ key: "total", bar: true }, { key: "waiting" }, { key: "started" }],
+    cols: [
+      {
+        key: "total",
+        bar: true,
+        // The two stages in order, so the bar reads as a progress split rather than a total.
+        segments: (r) => [
+          { value: r.waiting, title: `${r.waiting} awaiting a first review` },
+          { value: r.started, title: `${r.started} reviewed, not approved` },
+        ],
+      },
+      { key: "waiting" },
+      { key: "started" },
+    ],
   });
 
 const drawApprovals = () =>

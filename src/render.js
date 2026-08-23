@@ -25,6 +25,11 @@ const CSS = `
   --axis: #c3c2b7;
   --border: rgba(11, 11, 11, 0.10);
   --series-1: #2a78d6;
+  /* Ordinal ramp for the workload bar: one hue in two steps, because the segments are stages
+     of the same review (not yet looked at -> looked at, not signed off), and a reader should
+     see that order in the color. Blue steps 250 and 450; the near-surface end clears 2:1. */
+  --stage-1: #86b6ef;
+  --stage-2: #2a78d6;
   --good: #0ca30c;
   --serious: #ec835a;
   --accent-ink: #184f95;
@@ -41,6 +46,10 @@ const CSS = `
     --axis: #383835;
     --border: rgba(255, 255, 255, 0.10);
     --series-1: #3987e5;
+    /* Dark flips the anchor: the near-surface end is the dark one, so the later stage stays
+       the more prominent of the two. Blue steps 550 and 400. */
+    --stage-1: #1c5cab;
+    --stage-2: #3987e5;
     --good: #0ca30c;
     --serious: #ec835a;
     --accent-ink: #86b6ef;
@@ -154,6 +163,19 @@ tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transp
    reads as a loaded one -- which is exactly backwards for the question being asked. */
 .bar { flex: 1; min-width: 60px; height: 8px; }
 .bar-fill { height: 100%; background: var(--series-1); border-radius: 4px; min-width: 0; }
+/* Square at the baseline, 4px at the data end -- and only the last segment carries it. */
+.w-bar .bar { display: flex; }
+.w-bar .bar-fill { border-radius: 0; }
+.w-bar .bar-fill:last-child { border-radius: 0 4px 4px 0; }
+.seg-1 { background: var(--stage-1); }
+.seg-2 { background: var(--stage-2); }
+/* The 2px surface gap the segments are separated by, painted over the start of the second
+   one rather than inserted between them, so a split bar is exactly as long as an unsplit
+   one of the same total. Never a border: that would add ink that isn't data. */
+.w-bar .bar-fill + .bar-fill { box-shadow: -2px 0 0 var(--surface-1); }
+.legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.legend .sw-1 { background: var(--stage-1); }
+.legend .sw-2 { background: var(--stage-2); }
 #w-table td { border-bottom: 1px solid var(--grid); }
 #w-table th:not(:first-child), #w-table td:not(:first-child) { width: 22%; }
 #a-table td { border-bottom: 1px solid var(--grid); }
@@ -321,7 +343,11 @@ export function render(data) {
   <section>
     <div class="head">
       <h2>Reviewer workload</h2>
-      <span class="note">task force selections each reviewer still owes something on · awaiting = assigned, not yet reviewed · begun = reviewed, not yet approved</span>
+      <span class="note">task force selections each reviewer still owes something on</span>
+      <span class="legend">
+        <span><span class="sw sw-1"></span>awaiting a first review</span>
+        <span><span class="sw sw-2"></span>reviewed, not approved</span>
+      </span>
     </div>
     <div class="scroll">
       <table id="w-table">

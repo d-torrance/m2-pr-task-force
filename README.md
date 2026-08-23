@@ -53,6 +53,11 @@ in two distinct states:
 | **awaiting first review** | assigned, and has not reviewed yet |
 | **review begun** | reviewed, but not approved — a comment, changes requested, or an approval since dismissed |
 
+The bar under **Total** splits at the same two stages, in one hue at two steps rather than two
+different colors: these are stages of one review, not two unrelated things, so the order should
+be visible in the color. The numbers stay in the columns beside it, so the split never rests on
+color alone.
+
 Only the first of those exists in GitHub's own view, and counting it alone — as this table used
 to — reports the task force's most engaged picks as carrying **nothing**: the moment they
 comment their request is deleted, while the PR still waits on their approval. The sum is what
