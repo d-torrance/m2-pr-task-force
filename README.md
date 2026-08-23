@@ -44,7 +44,9 @@ most readers aren't.
 
 ## The workload table
 
-Two columns, because a reviewer owes something in two distinct states:
+The task force's own queue, and only that: one row per reviewer it has put on an open PR —
+exactly the pairs the PR table sets in **bold**. Two columns, because a reviewer owes something
+in two distinct states:
 
 | Column | Meaning |
 |---|---|
@@ -52,15 +54,18 @@ Two columns, because a reviewer owes something in two distinct states:
 | **review begun** | reviewed, but not approved — a comment, changes requested, or an approval since dismissed |
 
 Only the first of those exists in GitHub's own view, and counting it alone — as this table used
-to — reports the project's most engaged reviewers as carrying **nothing**: the moment they
+to — reports the task force's most engaged picks as carrying **nothing**: the moment they
 comment their request is deleted, while the PR still waits on their approval. The sum is what
-the table sorts on, since it is the number that answers "who has capacity".
+the table sorts on, since it is the number that answers "who to ask next".
 
-The origin split (task force / other requests / volunteered) used to be these columns and is
-now gone from them. For spreading load, an outstanding review is an outstanding review whoever
-asked for it — and a volunteered review is real work no request count would ever show. Origins
-still drive the PR table's emphasis, the filters, and every task force statistic; they just
-aren't load. For the same reason `TASK_FORCE_START` moves nothing here.
+Requests the task force did not make are left out, and so are the people who only ever appear
+that way. A maintainer who comments on many PRs unasked would otherwise rank near the top of a
+table used to decide who to ask, on work nobody asked them for — as one did, at 11. Those
+reviews still show on the PR rows, in grey, and the merged tab still credits every approval
+whoever requested it. A pick who has answered everything keeps a row at **zero**: that is what
+free capacity looks like, and dropping it would hide the person most available to ask.
+
+`TASK_FORCE_START` therefore moves rows here, as it does everywhere else.
 
 ## The triage number
 

@@ -321,7 +321,7 @@ export function render(data) {
   <section>
     <div class="head">
       <h2>Reviewer workload</h2>
-      <span class="note">open PRs each reviewer still owes something on · awaiting = assigned, not yet reviewed · begun = reviewed, not yet approved</span>
+      <span class="note">task force selections each reviewer still owes something on · awaiting = assigned, not yet reviewed · begun = reviewed, not yet approved</span>
     </div>
     <div class="scroll">
       <table id="w-table">

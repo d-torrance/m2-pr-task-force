@@ -90,21 +90,26 @@ function reviewersFor(pr, me, start) {
 }
 
 /**
- * Per-reviewer workload on the open PRs, in the two states a reviewer can owe something in:
+ * Per-reviewer workload: the task force's own queue, one row per reviewer it has put on an
+ * open PR. These are exactly the (PR, reviewer) pairs the PR table sets in bold, so the table
+ * and the rows agree about who the task force has asked for what.
+ *
+ * Two states, because a reviewer owes something in two different ways:
  *   waiting - assigned and has not reviewed yet: the first look is still outstanding
  *   started - reviewed, but not approved (a comment, changes requested, or an approval since
  *             dismissed): the review is underway and the PR still needs their sign-off
- * `total` is the sum, i.e. how many open PRs this person is on the hook for.
+ * `total` is the sum, i.e. how many of the task force's PRs this person is on the hook for.
  *
  * Only `waiting` survives in GitHub's own view of things, because it deletes the request as
  * soon as a review is submitted. Counting that alone -- as this table once did -- reported the
  * project's most engaged reviewers as carrying nothing, since the moment they comment their
  * request disappears and the PR still isn't approved.
  *
- * Who requested the review is deliberately ignored here. For spreading load, an outstanding
- * review is an outstanding review whoever asked for it, and the origin split (task force /
- * other / volunteered) told a triager nothing they could act on. The PR rows still carry it.
- * Bots are excluded here; they still appear on the PR rows.
+ * Requests the task force did not make are left out, and so are the people who only ever
+ * appear that way: a maintainer who comments on everything unasked would otherwise top a
+ * table meant for deciding who to ask next, on work nobody asked them for. Their reviews
+ * still show on the PR rows, in grey. `TASK_FORCE_START` therefore moves rows here, as it
+ * does everywhere else. Bots never rank, whoever requested them.
  */
 function workloadFrom(prs) {
   const byLogin = new Map();
@@ -115,10 +120,9 @@ function workloadFrom(prs) {
 
   for (const pr of prs) {
     for (const r of pr.reviewers) {
-      if (r.isBot) continue;
-      // Everyone who touches a PR gets a row, even at all-zero: someone who approved
-      // everything they were given reads as 0/0/0, which is precisely "has capacity" -- the
-      // question this table exists to answer. Their finished reviews still show on PR rows.
+      if (r.isBot || r.origin !== "mine") continue;
+      // A pick whose every review is in gets a row at zero rather than none at all: that is
+      // precisely "has capacity", which is the question this table exists to answer.
       const row = seen(r.login);
       if (r.state === "PENDING") row.waiting += 1;
       else if (r.state !== "APPROVED") row.started += 1;

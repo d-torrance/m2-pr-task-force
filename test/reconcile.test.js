@@ -103,22 +103,30 @@ test("teams are carried by name and do count as assignments", () => {
   assert.equal(who("reviewers-team").waiting, 1);
 });
 
-test("workload splits what a reviewer owes into not-yet-reviewed and not-yet-approved", () => {
+test("workload splits what a pick owes into not-yet-reviewed and not-yet-approved", () => {
   // alice has yet to look at #100, #101 and #103 -- including #103, where she left
   // CHANGES_REQUESTED and was then re-requested, so she owes another look.
   assert.deepEqual(who("alice"), { login: "alice", waiting: 3, started: 0, total: 3 });
-  // bob is the case GitHub's own view loses: still to look at #100, and on #107 he has
-  // commented without approving, which deleted his request but not his part in the PR.
-  assert.deepEqual(who("bob"), { login: "bob", waiting: 1, started: 1, total: 2 });
+  // bob is the case GitHub's own view loses: on #107 he commented without approving, which
+  // deleted his request but not his part in the PR.
+  assert.deepEqual(who("bob"), { login: "bob", waiting: 0, started: 1, total: 1 });
 });
 
-test("a review begun counts whether or not anyone asked for it", () => {
-  // carol was never requested on #100; she commented anyway, and it is still hers to finish.
-  assert.deepEqual(who("carol"), { login: "carol", waiting: 0, started: 1, total: 1 });
+test("the table is the task force's own queue -- other people's requests are not in it", () => {
+  // bob is also pending on #100, requested by otherperson. It is real work, but not work this
+  // table is for: it exists to decide who the task force asks next.
+  assert.equal(rev(100, "bob").state, "PENDING");
+  assert.equal(who("bob").waiting, 0);
+  // carol commented on #100 unasked, and dave approved #102 unasked. Neither holds a row at
+  // all, or a maintainer who comments on everything would top a table of the task force's asks.
+  assert.equal(who("carol"), undefined);
+  assert.equal(who("dave"), undefined);
 });
 
-test("someone who approved everything reads as zero -- present, and free", () => {
-  assert.deepEqual(who("dave"), { login: "dave", waiting: 0, started: 0, total: 0 });
+test("a pick who has answered everything reads as zero -- present, and free", () => {
+  // frank approved #102, so he owes nothing. He keeps his row: that is what capacity looks
+  // like, and dropping him would hide the person most available to ask.
+  assert.deepEqual(who("frank"), { login: "frank", waiting: 0, started: 0, total: 0 });
 });
 
 test("the gap numbers measure different things", () => {
@@ -173,10 +181,11 @@ test("a request made on the start date itself counts", () => {
   assert.equal(alice.origin, "mine"); // requested 2026-07-02T00:00:00Z
 });
 
-test("the cutoff moves nothing in the workload -- it counts what is owed, not who asked", () => {
-  // Everywhere else the cutoff re-attributes work. Here it must not: for spreading load, a
-  // review alice owes is one she owes whoever requested it and whenever they did.
-  assert.deepEqual(cut.open.workload, data.open.workload);
+test("the cutoff pulls rows out of the workload, as it does everything else", () => {
+  const a = cut.open.workload.find((w) => w.login === "alice");
+  assert.equal(a.total, 1); // only #100, requested in July; #101 and #103 predate the effort
+  // The team's request on #104 predates it entirely, so the row goes with it.
+  assert.equal(cut.open.workload.find((w) => w.login === "reviewers-team"), undefined);
 });
 
 /* -------------------------------- merged tab --------------------------------- */
@@ -286,11 +295,11 @@ test("submittedAt is null while pending, even for someone who reviewed an earlie
 
 test("response rate is request-level, and the two tabs sum to the whole", () => {
   const rq = data.taskForce.requests;
-  assert.equal(rq.total, 8);
-  assert.equal(rq.answered, 2);
+  assert.equal(rq.total, 10);
+  assert.equal(rq.answered, 4);
   assert.equal(rq.open.total + rq.merged.total, rq.total);
   assert.equal(rq.open.answered + rq.merged.answered, rq.answered);
-  assert.equal(rq.medianResponseDays, 11); // alice answered in 5 days, bob in 17
+  assert.equal(rq.medianResponseDays, 5); // answers came in 5, 5, 5 and 17 days
 });
 
 test("a review stamped before its own request contributes no response time", () => {
@@ -299,9 +308,9 @@ test("a review stamped before its own request contributes no response time", () 
     "2026-01-01T00:00:00Z";
   const d = reconcile({ ...backwards, since: "2026-04-15", months: 3 }, opts);
   // Still an answered request -- they did review -- but not a negative latency.
-  assert.equal(d.taskForce.requests.answered, 2);
-  assert.equal(d.taskForce.requests.responded, 1);
-  assert.equal(d.taskForce.requests.medianResponseDays, 17);
+  assert.equal(d.taskForce.requests.answered, 4);
+  assert.equal(d.taskForce.requests.responded, 3);
+  assert.equal(d.taskForce.requests.medianResponseDays, 5);
 });
 
 test("the ceiling on every duration is the age of the effort, and needs a start date", () => {

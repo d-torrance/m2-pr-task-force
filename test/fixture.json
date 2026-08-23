@@ -219,7 +219,7 @@
       }
     },
     {
-      "comment": "Assigned by me, then removed and never re-added: dave volunteered a review afterwards, so he is NOT my selection.",
+      "comment": "Assigned by me, then removed and never re-added: dave volunteered a review afterwards, so he is NOT my selection. frank IS one, and has approved -- he should still hold a row in the workload, at zero, which is what free capacity looks like.",
       "number": 102,
       "title": "Removed then volunteered",
       "url": "https://example.invalid/102",
@@ -243,6 +243,14 @@
             "author": {
               "__typename": "User",
               "login": "dave"
+            }
+          },
+          {
+            "state": "APPROVED",
+            "submittedAt": "2026-07-06T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "frank"
             }
           }
         ]
@@ -269,6 +277,17 @@
             "requestedReviewer": {
               "__typename": "User",
               "login": "dave"
+            }
+          },
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-07-01T00:00:00Z",
+            "actor": {
+              "login": "me"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "frank"
             }
           }
         ]
@@ -401,7 +420,7 @@
       }
     },
     {
-      "comment": "Reviewed but not approved, and NOT re-requested: GitHub has deleted bob's request, so he shows only in latestReviews. The workload must still count it -- this is the state a review sits in for most of its life.",
+      "comment": "A task force pick who reviewed without approving, and was NOT re-requested: GitHub has deleted bob's request, so he shows only in latestReviews. The workload must still count it -- this is the state a review sits in for most of its life.",
       "number": 107,
       "title": "Commented, awaiting approval",
       "url": "https://example.invalid/107",
@@ -435,7 +454,7 @@
             "__typename": "ReviewRequestedEvent",
             "createdAt": "2026-07-08T00:00:00Z",
             "actor": {
-              "login": "otherperson"
+              "login": "me"
             },
             "requestedReviewer": {
               "__typename": "User",
