@@ -163,10 +163,13 @@ tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transp
    reads as a loaded one -- which is exactly backwards for the question being asked. */
 .bar { flex: 1; min-width: 60px; height: 8px; }
 .bar-fill { height: 100%; background: var(--series-1); border-radius: 4px; min-width: 0; }
-/* Square at the baseline, 4px at the data end -- and only the last segment carries it. */
 .w-bar .bar { display: flex; }
+/* The single-series bar keeps the rounded data end of the mark spec. The stacked one does not:
+   a 4px cap on the far side of the surface gap left a trailing one-unit segment as a rounded
+   lozenge floating off the end of the bar, which read as a shape rather than as a value.
+   Square across, and the gap goes on doing the separating. */
 .w-bar .bar-fill { border-radius: 0; }
-.w-bar .bar-fill:last-child { border-radius: 0 4px 4px 0; }
+#a-table .w-bar .bar-fill { border-radius: 0 4px 4px 0; }
 .seg-1 { background: var(--stage-1); }
 .seg-2 { background: var(--stage-2); }
 /* The 2px surface gap the segments are separated by, painted over the start of the second
