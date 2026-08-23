@@ -148,8 +148,8 @@ tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transp
 .none { color: var(--text-muted); font-style: italic; font-size: 12px; }
 
 .w-name { white-space: nowrap; }
-.w-mine { display: flex; align-items: center; gap: 10px; }
-.w-mine .num { min-width: 1.5em; }
+.w-bar { display: flex; align-items: center; gap: 10px; }
+.w-bar .num { min-width: 1.5em; }
 /* A bar chart, not a meter: no track. Zero must render as nothing, or an idle reviewer
    reads as a loaded one -- which is exactly backwards for the question being asked. */
 .bar { flex: 1; min-width: 60px; height: 8px; }
@@ -295,6 +295,7 @@ export function render(data) {
         <option value="all">Any assignment</option>
         <option value="mine">Has a task force selection</option>
         <option value="notmine">No task force selection</option>
+        <option value="started">Review begun, not approved</option>
         <option value="nohook">Nobody on the hook</option>
         <option value="unassigned">No reviewer at all</option>
       </select>
@@ -320,15 +321,15 @@ export function render(data) {
   <section>
     <div class="head">
       <h2>Reviewer workload</h2>
-      <span class="note">outstanding requests · “other” includes requests made before the task force began · volunteered = reviewed unasked</span>
+      <span class="note">open PRs each reviewer still owes something on · awaiting = assigned, not yet reviewed · begun = reviewed, not yet approved</span>
     </div>
     <div class="scroll">
       <table id="w-table">
         <thead><tr>
           <th data-wsort="reviewer">Reviewer</th>
-          <th data-wsort="mine">Task force</th>
-          <th data-wsort="other">Other requests</th>
-          <th data-wsort="volunteer">Volunteered</th>
+          <th data-wsort="total">Total</th>
+          <th data-wsort="waiting">Awaiting first review</th>
+          <th data-wsort="started">Review begun</th>
         </tr></thead>
         <tbody id="w-body"></tbody>
       </table>

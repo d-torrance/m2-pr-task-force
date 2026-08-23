@@ -38,6 +38,7 @@ const o = data.open.stats;
 console.log(`\nopen:`);
 console.log(`  ${open.length} open — ${o.prs} up for review (${o.drafts} ${o.draftLabel} draft), ${open.length - o.prs} other draft skipped`);
 console.log(`  ${o.pending} PRs awaiting review — ${o.pendingMine} with a task force pick (by ${ME} since ${START}), ${o.pending - o.pendingMine} assigned only by others`);
+console.log(`  ${o.inProgress} with a review underway but no approval, ${o.noOneOnHook} with nobody on them at all`);
 console.log(`  ${o.untriaged} opened since ${START} with no reviewer from ${ME} (${o.untriagedNoReviewer} with no reviewer at all)`);
 console.log(`  ${data.open.workload.length} reviewers`);
 

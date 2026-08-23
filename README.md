@@ -37,11 +37,30 @@ task force's own output.
 
 The PR table shows **two** visual states, because triage only asks one question: **bold** is a
 task force selection, grey is anyone else's (hover any name for who requested it). Bots are
-never bold whoever requested them — emphasis is for the humans carrying load. The workload
-table keeps all three origins apart, because load-balancing needs the detail.
+never bold whoever requested them — emphasis is for the humans carrying load.
 
 The page is public, so it names the assigner throughout rather than addressing a "you" that
 most readers aren't.
+
+## The workload table
+
+Two columns, because a reviewer owes something in two distinct states:
+
+| Column | Meaning |
+|---|---|
+| **awaiting first review** | assigned, and has not reviewed yet |
+| **review begun** | reviewed, but not approved — a comment, changes requested, or an approval since dismissed |
+
+Only the first of those exists in GitHub's own view, and counting it alone — as this table used
+to — reports the project's most engaged reviewers as carrying **nothing**: the moment they
+comment their request is deleted, while the PR still waits on their approval. The sum is what
+the table sorts on, since it is the number that answers "who has capacity".
+
+The origin split (task force / other requests / volunteered) used to be these columns and is
+now gone from them. For spreading load, an outstanding review is an outstanding review whoever
+asked for it — and a volunteered review is real work no request count would ever show. Origins
+still drive the PR table's emphasis, the filters, and every task force statistic; they just
+aren't load. For the same reason `TASK_FORCE_START` moves nothing here.
 
 ## The triage number
 
@@ -50,9 +69,19 @@ on** — the task force's own inbox, and the one queue that can be kept at zero.
 start deliberately: M2 has open PRs going back four years, and mixing that backlog in buries the
 handful of new arrivals that actually need a decision this week.
 
-`data.json` still carries the wider gap numbers (`unassigned`, `noOneOnHook`, and the
-`pending` / `pendingMine` split), and the PR table can filter on them, but the headline row
-stays on the number that implies an action.
+`data.json` still carries the wider gap numbers, and the PR table can filter on them, but the
+headline row stays on the number that implies an action. Those numbers split the open queue
+three ways, and the middle group is the one worth naming:
+
+| | Meaning |
+|---|---|
+| `pending` | somebody is still to take a first look (`pendingMine` = at least one of them a task force pick) |
+| `inProgress` | no request outstanding, but a reviewer has commented or requested changes without approving |
+| `noOneOnHook` | nothing outstanding at all — the real queue of work to hand out (`unassigned` = not even a reviewer to nudge) |
+
+`inProgress` used to be folded into `noOneOnHook`, for the same reason the workload table read
+as zero: the review that removed the request is invisible to a request count. That put **13 of
+M2's 21** supposedly untended PRs in a pile where somebody was already mid-review.
 
 ## How long things take
 

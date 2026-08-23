@@ -60,7 +60,7 @@ const state = {
   tab: "open",
   open: { sort: "number", dir: -1, q: "", label: "", reviewer: "", mode: "all" },
   merged: { sort: "tail", dir: -1, q: "", label: "", reviewer: "", mode: "all" },
-  wsort: "mine",
+  wsort: "total",
   wdir: -1,
   asort: "approved",
   adir: -1,
@@ -159,13 +159,19 @@ function visiblePrs(view, st) {
     if (st.label && !pr.labels.some((l) => l.name === st.label)) return false;
     if (st.reviewer && !pr.reviewers.some((r) => r.login === st.reviewer)) return false;
     const has = (fn) => pr.reviewers.some(fn);
+    // The same three-way split the KPIs use, so a filter and a stat never disagree: awaiting a
+    // first review, a review underway with no approval yet, or nobody on it at all.
+    const pending = (r) => r.state === "PENDING";
+    const underway = (r) => !pending(r) && r.state !== "APPROVED";
     switch (st.mode) {
       case "mine":
         return has((r) => r.origin === "mine");
       case "notmine":
         return !has((r) => r.origin === "mine");
+      case "started":
+        return !has(pending) && has(underway);
       case "nohook":
-        return !has((r) => r.state === "PENDING");
+        return !has(pending) && !has(underway);
       case "unassigned":
         return pr.reviewers.length === 0;
       case "approved":
@@ -325,7 +331,7 @@ function drawWaitTimes() {
 // One series per table (the number the table is ranked by), so each bar is a single
 // sequential hue and needs no legend.
 function bar(value, max) {
-  const td = el("td", "w-mine");
+  const td = el("td", "w-bar");
   const track = el("div", "bar");
   const fill = el("div", "bar-fill");
   fill.style.width = `${(value / max) * 100}%`;
@@ -334,18 +340,23 @@ function bar(value, max) {
   return td;
 }
 
-function drawTable({ table, body, rows, sortKey, dir, keys, primary, extra }) {
+// `cols` is the column order after the reviewer name; the one marked `bar` gets the bar,
+// so a table can lead with its total and keep the breakdown beside it.
+function drawTable({ table, body, rows, sortKey, dir, keys, cols }) {
   const sorted = [...rows].sort((a, b) => {
     const x = keys[sortKey](a);
     const y = keys[sortKey](b);
     return (x < y ? -1 : x > y ? 1 : 0) * dir || a.login.localeCompare(b.login);
   });
-  const max = Math.max(1, ...rows.map((r) => r[primary]));
+  const barKey = cols.find((c) => c.bar).key;
+  const max = Math.max(1, ...rows.map((r) => r[barKey]));
   $(body).replaceChildren(
     ...sorted.map((r) => {
       const tr = el("tr");
-      tr.append(el("td", "w-name", r.login), bar(r[primary], max));
-      for (const k of extra) tr.append(el("td", "num dim", String(r[k])));
+      tr.append(el("td", "w-name", r.login));
+      for (const c of cols) {
+        tr.append(c.bar ? bar(r[c.key], max) : el("td", "num dim", String(r[c.key])));
+      }
       return tr;
     }),
   );
@@ -364,12 +375,11 @@ const drawWorkload = () =>
     dir: state.wdir,
     keys: {
       reviewer: (r) => r.login.toLowerCase(),
-      mine: (r) => r.mine,
-      other: (r) => r.other,
-      volunteer: (r) => r.volunteer,
+      total: (r) => r.total,
+      waiting: (r) => r.waiting,
+      started: (r) => r.started,
     },
-    primary: "mine",
-    extra: ["other", "volunteer"],
+    cols: [{ key: "total", bar: true }, { key: "waiting" }, { key: "started" }],
   });
 
 const drawApprovals = () =>
@@ -384,8 +394,7 @@ const drawApprovals = () =>
       approved: (r) => r.approved,
       mine: (r) => r.mine,
     },
-    primary: "approved",
-    extra: ["mine"],
+    cols: [{ key: "approved", bar: true }, { key: "mine" }],
   });
 
 /* ---------------------------------- Controls ---------------------------------- */

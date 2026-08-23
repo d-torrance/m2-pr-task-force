@@ -90,36 +90,45 @@ function reviewersFor(pr, me, start) {
 }
 
 /**
- * Per-reviewer workload. `mine` is the load-balancing number: outstanding requests you
- * made. `other` is outstanding requests someone else made. `volunteer` counts reviews
- * they picked up unasked -- real effort that no pending-request count would ever show.
+ * Per-reviewer workload on the open PRs, in the two states a reviewer can owe something in:
+ *   waiting - assigned and has not reviewed yet: the first look is still outstanding
+ *   started - reviewed, but not approved (a comment, changes requested, or an approval since
+ *             dismissed): the review is underway and the PR still needs their sign-off
+ * `total` is the sum, i.e. how many open PRs this person is on the hook for.
+ *
+ * Only `waiting` survives in GitHub's own view of things, because it deletes the request as
+ * soon as a review is submitted. Counting that alone -- as this table once did -- reported the
+ * project's most engaged reviewers as carrying nothing, since the moment they comment their
+ * request disappears and the PR still isn't approved.
+ *
+ * Who requested the review is deliberately ignored here. For spreading load, an outstanding
+ * review is an outstanding review whoever asked for it, and the origin split (task force /
+ * other / volunteered) told a triager nothing they could act on. The PR rows still carry it.
  * Bots are excluded here; they still appear on the PR rows.
  */
 function workloadFrom(prs) {
   const byLogin = new Map();
   const seen = (login) => {
-    if (!byLogin.has(login)) byLogin.set(login, { login, mine: 0, other: 0, volunteer: 0 });
+    if (!byLogin.has(login)) byLogin.set(login, { login, waiting: 0, started: 0, total: 0 });
     return byLogin.get(login);
   };
 
   for (const pr of prs) {
     for (const r of pr.reviewers) {
       if (r.isBot) continue;
-      // Everyone who touches a PR gets a row, even at all-zero: someone who answered every
-      // request they were given reads as 0/0/0, which is precisely "has capacity" -- the
+      // Everyone who touches a PR gets a row, even at all-zero: someone who approved
+      // everything they were given reads as 0/0/0, which is precisely "has capacity" -- the
       // question this table exists to answer. Their finished reviews still show on PR rows.
       const row = seen(r.login);
-      if (r.origin === "volunteer") row.volunteer += 1;
-      else if (r.state === "PENDING") row[r.origin] += 1;
+      if (r.state === "PENDING") row.waiting += 1;
+      else if (r.state !== "APPROVED") row.started += 1;
     }
   }
 
+  for (const row of byLogin.values()) row.total = row.waiting + row.started;
+
   return [...byLogin.values()].sort(
-    (a, b) =>
-      b.mine - a.mine ||
-      b.other - a.other ||
-      b.volunteer - a.volunteer ||
-      a.login.localeCompare(b.login),
+    (a, b) => b.total - a.total || b.waiting - a.waiting || a.login.localeCompare(b.login),
   );
 }
 
@@ -297,7 +306,7 @@ const shape = (pr, me, start) => ({
   reviewers: reviewersFor(pr, me, start),
 });
 
-/** Open PRs -> table rows, pending workload, the two gap numbers, and the wait times. */
+/** Open PRs -> table rows, reviewer workload, the two gap numbers, and the wait times. */
 function reconcileOpen(rawPrs, me, start, now) {
   const prs = rawPrs
     .filter(isReviewable)
@@ -305,14 +314,21 @@ function reconcileOpen(rawPrs, me, start, now) {
     .sort((a, b) => b.number - a.number);
 
   // Every KPI here counts PRs, not reviewer slots, so the headline numbers partition the
-  // queue exactly: pendingMine + pendingOther + noOneOnHook === prs.length. A PR with two
-  // pending reviewers is one PR waiting, and a PR the assigner picked counts as theirs even
-  // if someone else also requested a reviewer on it -- the task force owns it either way.
+  // queue exactly: pending + inProgress + noOneOnHook === prs.length. A PR with two pending
+  // reviewers is one PR waiting, and a PR the assigner picked counts as theirs even if
+  // someone else also requested a reviewer on it -- the task force owns it either way.
   const isPending = (r) => r.state === "PENDING";
+  // A submitted review that is not an approval: that reviewer is engaged and the PR still
+  // needs their sign-off. This is the group GitHub's request list cannot see, since it
+  // deletes the request the moment the review lands -- see workloadFrom.
+  const isUnderway = (r) => !isPending(r) && r.state !== "APPROVED";
   const untriaged = prs.filter(
     (p) => (!start || p.createdAt >= start) && !p.reviewers.some((r) => r.origin === "mine"),
   );
   const waiting = prs.filter((p) => p.reviewers.some(isPending));
+  // Awaiting a first review takes precedence: if anyone is still to look at all, that is the
+  // more urgent thing about the PR, so the three groups stay disjoint.
+  const underway = prs.filter((p) => !p.reviewers.some(isPending) && p.reviewers.some(isUnderway));
   const pendingMine = waiting.filter((p) => p.reviewers.some((r) => isPending(r) && r.origin === "mine"));
 
   return {
@@ -331,13 +347,18 @@ function reconcileOpen(rawPrs, me, start, now) {
       // one queue that can actually be kept at zero.
       untriaged: untriaged.length,
       untriagedNoReviewer: untriaged.filter((p) => p.reviewers.length === 0).length,
-      // Two different gaps. `unassigned` is a PR nobody has touched at all. `noOneOnHook` also
-      // catches the PR whose only reviewer volunteered a drive-by comment and owes nothing --
-      // still nobody committed to reviewing it, so it's the real queue of work to hand out.
-      unassigned: prs.filter((p) => p.reviewers.length === 0).length,
-      noOneOnHook: prs.length - waiting.length,
+      // Three states, because "waiting" and "abandoned" are different problems: `pending` is
+      // waiting on a first look, `inProgress` has a review underway that no request records
+      // any more, and `noOneOnHook` is what's left -- the real queue of work to hand out.
+      // Counting the middle group as nobody's, as this once did, put 13 of M2's 21 supposedly
+      // untended PRs in a pile where somebody was already mid-review.
       pending: waiting.length,
       pendingMine: pendingMine.length,
+      inProgress: underway.length,
+      noOneOnHook: prs.length - waiting.length - underway.length,
+      // A PR nobody has touched at all: a strict subset of noOneOnHook, and the only one of
+      // these where there is no one even to nudge.
+      unassigned: prs.filter((p) => p.reviewers.length === 0).length,
     },
   };
 }

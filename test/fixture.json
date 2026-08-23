@@ -399,6 +399,51 @@
       "timelineItems": {
         "nodes": []
       }
+    },
+    {
+      "comment": "Reviewed but not approved, and NOT re-requested: GitHub has deleted bob's request, so he shows only in latestReviews. The workload must still count it -- this is the state a review sits in for most of its life.",
+      "number": 107,
+      "title": "Commented, awaiting approval",
+      "url": "https://example.invalid/107",
+      "isDraft": false,
+      "createdAt": "2026-06-20T00:00:00Z",
+      "updatedAt": "2026-07-13T00:00:00Z",
+      "author": {
+        "login": "contributor"
+      },
+      "labels": {
+        "nodes": []
+      },
+      "reviewRequests": {
+        "nodes": []
+      },
+      "latestReviews": {
+        "nodes": [
+          {
+            "state": "COMMENTED",
+            "submittedAt": "2026-07-13T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "bob"
+            }
+          }
+        ]
+      },
+      "timelineItems": {
+        "nodes": [
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-07-08T00:00:00Z",
+            "actor": {
+              "login": "otherperson"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "bob"
+            }
+          }
+        ]
+      }
     }
   ],
   "merged": [

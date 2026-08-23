@@ -21,7 +21,7 @@ const appr = (d, login) => d.merged.approvals.find((a) => a.login === login);
 
 test("an unlabelled draft is excluded", () => {
   assert.equal(pr(900), undefined);
-  assert.equal(data.open.stats.prs, 7);
+  assert.equal(data.open.stats.prs, 8);
 });
 
 test("a JSAG draft is listed -- policy opens them as drafts, but they want review", () => {
@@ -29,7 +29,7 @@ test("a JSAG draft is listed -- policy opens them as drafts, but they want revie
   assert.equal(data.open.stats.drafts, 1);
   // And it carries its full assignment data, exactly like any other row.
   assert.equal(rev(106, "erin").origin, "mine");
-  assert.equal(who("erin").mine, 1);
+  assert.equal(who("erin").waiting, 1);
 });
 
 test("the JSAG label matches whatever its casing", () => {
@@ -43,7 +43,7 @@ test("the JSAG label matches whatever its casing", () => {
 test("PRs are listed newest first", () => {
   assert.deepEqual(
     data.open.prs.map((p) => p.number),
-    [106, 105, 104, 103, 102, 101, 100],
+    [107, 106, 105, 104, 103, 102, 101, 100],
   );
 });
 
@@ -67,8 +67,6 @@ test("a removed request is not an assignment, even though I made it originally",
   // selection would credit the task force for work it did not direct.
   assert.equal(rev(102, "dave").origin, "volunteer");
   assert.equal(rev(102, "dave").state, "APPROVED");
-  assert.equal(who("dave").volunteer, 1);
-  assert.equal(who("dave").mine, 0);
 });
 
 test("re-request after a review reads as pending, not as the old verdict", () => {
@@ -102,33 +100,52 @@ test("teams are carried by name and do count as assignments", () => {
   const team = rev(104, "reviewers-team");
   assert.equal(team.isTeam, true);
   assert.equal(team.origin, "mine");
-  assert.equal(who("reviewers-team").mine, 1);
+  assert.equal(who("reviewers-team").waiting, 1);
 });
 
-test("workload counts only outstanding requests, split by who made them", () => {
-  // alice is outstanding on #100, #101 and #103 -- including #103, where she already left
-  // CHANGES_REQUESTED and was then re-requested.
-  assert.deepEqual(who("alice"), { login: "alice", mine: 3, other: 0, volunteer: 0 });
-  assert.deepEqual(who("bob"), { login: "bob", mine: 0, other: 1, volunteer: 0 });
+test("workload splits what a reviewer owes into not-yet-reviewed and not-yet-approved", () => {
+  // alice has yet to look at #100, #101 and #103 -- including #103, where she left
+  // CHANGES_REQUESTED and was then re-requested, so she owes another look.
+  assert.deepEqual(who("alice"), { login: "alice", waiting: 3, started: 0, total: 3 });
+  // bob is the case GitHub's own view loses: still to look at #100, and on #107 he has
+  // commented without approving, which deleted his request but not his part in the PR.
+  assert.deepEqual(who("bob"), { login: "bob", waiting: 1, started: 1, total: 2 });
 });
 
-test("someone who answered every request reads as zero -- present, and free", () => {
-  assert.equal(who("carol").volunteer, 1);
-  assert.equal(who("carol").mine, 0);
+test("a review begun counts whether or not anyone asked for it", () => {
+  // carol was never requested on #100; she commented anyway, and it is still hers to finish.
+  assert.deepEqual(who("carol"), { login: "carol", waiting: 0, started: 1, total: 1 });
 });
 
-test("the two gap numbers measure different things", () => {
-  // Only #105 has nobody at all. #102 also has nobody on the hook -- dave's approval was
-  // unrequested, so no one owes it a review -- but #104's team request is still outstanding.
-  assert.equal(data.open.stats.unassigned, 1);
-  assert.equal(data.open.stats.noOneOnHook, 2);
+test("someone who approved everything reads as zero -- present, and free", () => {
+  assert.deepEqual(who("dave"), { login: "dave", waiting: 0, started: 0, total: 0 });
 });
 
-test("the headline counts are PRs, and they partition the open queue", () => {
+test("the gap numbers measure different things", () => {
+  const s = data.open.stats;
+  // #102 and #105 have nobody on them: dave's approval on #102 finished the job, and #105 has
+  // no reviewer at all. Only #105 counts as unassigned.
+  assert.equal(s.noOneOnHook, 2);
+  assert.equal(s.unassigned, 1);
+  // #107 is the one this used to get wrong: bob commented without approving, which deleted
+  // his request, and the PR then read as one nobody was handling.
+  assert.equal(s.inProgress, 1);
+});
+
+test("a review underway does not count as awaiting a first look", () => {
+  // #100 has carol's comment AND alice and bob still to look: pending wins, because the
+  // first review is the more urgent thing missing.
+  assert.equal(pr(100).reviewers.find((r) => r.login === "carol").state, "COMMENTED");
+  assert.ok(data.open.prs.some((p) => p.number === 100 && p.reviewers.some((r) => r.state === "PENDING")));
+  assert.equal(data.open.stats.pending, 5);
+});
+
+test("the headline counts are PRs, and the three groups partition the open queue", () => {
   // A PR with two pending reviewers is still one PR waiting, so these must add up.
   const s = data.open.stats;
-  assert.equal(s.pending + s.noOneOnHook, s.prs);
+  assert.equal(s.pending + s.inProgress + s.noOneOnHook, s.prs);
   assert.ok(s.pendingMine <= s.pending);
+  assert.ok(s.unassigned <= s.noOneOnHook);
 });
 
 test("a deleted account does not crash the build", () => {
@@ -156,11 +173,10 @@ test("a request made on the start date itself counts", () => {
   assert.equal(alice.origin, "mine"); // requested 2026-07-02T00:00:00Z
 });
 
-test("the cutoff moves work out of the task force column, not off the page", () => {
-  const a = cut.open.workload.find((w) => w.login === "alice");
-  assert.equal(a.mine + a.other, 3); // still three outstanding requests
-  assert.equal(a.mine, 1); // only #100, requested in July
-  assert.equal(a.other, 2); // #101 and #103 predate the task force
+test("the cutoff moves nothing in the workload -- it counts what is owed, not who asked", () => {
+  // Everywhere else the cutoff re-attributes work. Here it must not: for spreading load, a
+  // review alice owes is one she owes whoever requested it and whenever they did.
+  assert.deepEqual(cut.open.workload, data.open.workload);
 });
 
 /* -------------------------------- merged tab --------------------------------- */
