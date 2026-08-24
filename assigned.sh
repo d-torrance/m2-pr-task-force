@@ -1,7 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-viewer_login=$(gh api user --jq '.login')
+if [ $# -gt 1 ]; then
+  echo "usage: $(basename "$0") [username]" >&2
+  exit 1
+fi
+
+viewer_login=${1:-$(gh api user --jq '.login')}
 
 gh pr list -R Macaulay2/M2 \
   --state=all \
@@ -26,20 +31,34 @@ gh pr list -R Macaulay2/M2 \
       {{- $requested = true -}}
     {{- end -}}
   {{- end -}}
+  {{- $reviewed := false -}}
   {{- $decision := "" -}}
   {{- range .reviews -}}
-    {{- if and
-        (eq .author.login $viewer)
-        (or (eq .state "APPROVED") (eq .state "CHANGES_REQUESTED") (eq .state "DISMISSED"))
-    -}}
-      {{- $decision = .state -}}
+    {{- if eq .author.login $viewer -}}
+      {{- $reviewed = true -}}
+      {{- if or (eq .state "APPROVED") (eq .state "CHANGES_REQUESTED") (eq .state "DISMISSED") -}}
+        {{- $decision = .state -}}
+      {{- end -}}
     {{- end -}}
   {{- end -}}
   {{- if and (eq .state "OPEN") (or $requested (ne $decision "APPROVED")) -}}
+    {{- /* The stage of the review, the same split the workload table on the website makes:
+           an open request is a look still owed, and anything else here is a review already
+           underway that has not been signed off. A re-request after a review is a look owed
+           too, so it stays on the waiting side of the split, named for what it is. */ -}}
+    {{- $status := "review begun" -}}
+    {{- $style := "cyan" -}}
+    {{- if $requested -}}
+      {{- $status = "awaiting first review" -}}
+      {{- if $reviewed -}}
+        {{- $status = "awaiting re-review" -}}
+      {{- end -}}
+      {{- $style = "blue" -}}
+    {{- end -}}
     {{- tablerow
         $repo
-        (autocolor "green" (printf "#%v" .number))
-        (autocolor "green" "open")
+        (autocolor $style (printf "#%v" .number))
+        (autocolor $style $status)
         .title
         (join ", " (pluck "name" .labels))
         (timeago .updatedAt)
