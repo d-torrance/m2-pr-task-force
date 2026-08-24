@@ -154,6 +154,12 @@ if $summary; then
              { since: $author_at,
                why: "\($last_review.author.login) reviewed \($last_review.submittedAt | date),"
                  + " author responded \($author_at | date), no review since" }
+           elif $pick.at > $last_review.submittedAt and $mine_at < $pick.at then
+             # Asked after the last review had already been written, and not back since. The
+             # earlier round is not an answer this reviewer is waiting on -- it is the state of
+             # the PR they were asked to look at -- so the wait runs from the ask.
+             { since: $pick.at,
+               why: "picked \($pick.at | date), after the last review, nothing from \(me) since" }
            elif $other_ok != null and $other_ok.submittedAt > $mine_at then
              # A colleague has signed off and this reviewer has not been back since. The author
              # has nothing to answer, so the only thing still outstanding is this sign-off.
