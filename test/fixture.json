@@ -80,7 +80,7 @@
       }
     },
     {
-      "comment": "All three origins on one PR: mine pending, other's pending, and a volunteer who reviewed.",
+      "comment": "All three origins on one PR: mine pending, other's pending, and a volunteer who reviewed. The author also nudges alice after my pick, which must not move the pick to them.",
       "number": 100,
       "title": "Three origins",
       "url": "https://example.invalid/100",
@@ -148,6 +148,17 @@
             "requestedReviewer": {
               "__typename": "User",
               "login": "bob"
+            }
+          },
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-07-10T00:00:00Z",
+            "actor": {
+              "login": "contributor"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "alice"
             }
           }
         ]

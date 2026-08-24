@@ -13,8 +13,11 @@ export function loginOf(actor) {
 
 /**
  * Replay a PR's review-request events to find who currently owns each assignment.
- * Chronological, last write wins; a removal clears the assignment entirely.
- * @returns Map<reviewerLogin, {actor: string|null, at: string}>
+ * Chronological; a removal clears everything asked of that person before it, so what is left
+ * is every request still standing, oldest first. Plural because GitHub records a re-request as
+ * a new event and never removes the old one: one reviewer can be under several live asks from
+ * several people at once, and which of them attribution belongs to is not this function's call.
+ * @returns Map<reviewerLogin, Array<{actor: string|null, at: string}>>
  */
 export function replayAssignments(timelineNodes) {
   const assigner = new Map();
@@ -23,12 +26,26 @@ export function replayAssignments(timelineNodes) {
     const reviewer = loginOf(e.requestedReviewer);
     if (!reviewer) continue;
     if (e.__typename === "ReviewRequestedEvent") {
-      assigner.set(reviewer, { actor: loginOf(e.actor), at: e.createdAt });
+      assigner.set(reviewer, [...(assigner.get(reviewer) ?? []), { actor: loginOf(e.actor), at: e.createdAt }]);
     } else {
       assigner.delete(reviewer);
     }
   }
   return assigner;
+}
+
+/**
+ * Which of a reviewer's live requests attribution reads from: the assigner's own first, if the
+ * task force ever asked this person and the ask still stands, otherwise the most recent.
+ *
+ * Last-write-wins would be wrong here, and visibly so: an author who nudges a reviewer the task
+ * force picked -- a re-request, which GitHub files as a fresh event -- would take the pick away
+ * from the task force and hand it to themselves. The earliest of the assigner's own requests is
+ * also the honest clock: it is when the task force started waiting.
+ */
+function attribute(requests, me, start) {
+  if (!requests?.length) return null;
+  return requests.find((r) => r.actor === me && (!start || r.at >= start)) ?? requests.at(-1);
 }
 
 // Three origins, and they are genuinely different things:
@@ -41,10 +58,9 @@ export function replayAssignments(timelineNodes) {
 // for years, and without a cutoff that history is indistinguishable from the task force -- it
 // would have claimed 8 merged PRs for an effort that had produced 2. `at` is an ISO timestamp
 // and `start` an ISO date, so a lexical >= includes everything on the start day.
-function originOf(assigner, reviewer, me, start) {
-  const a = assigner.get(reviewer);
-  if (!a) return "volunteer";
-  return a.actor === me && (!start || a.at >= start) ? "mine" : "other";
+function originOf(request, me, start) {
+  if (!request) return "volunteer";
+  return request.actor === me && (!start || request.at >= start) ? "mine" : "other";
 }
 
 /** One PR's reviewers, each resolved to {origin, state}. Task force picks sort first. */
@@ -68,11 +84,11 @@ function reviewersFor(pr, me, start) {
     const actor = pending.get(login) ?? reviewed.get(login).author;
     // Pending wins over a past review: a re-request after a review means they owe another look.
     const state = pending.has(login) ? "PENDING" : reviewed.get(login).state;
-    const a = assigner.get(login);
+    const a = attribute(assigner.get(login), me, start);
     reviewers.push({
       login,
       state,
-      origin: originOf(assigner, login, me, start),
+      origin: originOf(a, me, start),
       assignedBy: a?.actor ?? null,
       assignedAt: a?.at ?? null,
       // Null while pending, even for someone who reviewed an earlier round and was then

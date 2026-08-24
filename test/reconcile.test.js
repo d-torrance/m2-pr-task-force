@@ -57,6 +57,16 @@ test("origin is attributed from the timeline, not from the request list", () => 
   assert.equal(rev(100, "carol").assignedBy, null);
 });
 
+test("an author nudging a task force pick leaves the pick with the task force", () => {
+  // #100: I requested alice on 07-02, then the author re-requested her on 07-10. GitHub files
+  // that as a fresh request and deletes nothing, so reading the last event would hand my pick
+  // to the person who nudged her -- and quietly empty the workload table of its real rows.
+  assert.equal(rev(100, "alice").origin, "mine");
+  assert.equal(rev(100, "alice").assignedBy, "me");
+  // The task force started waiting when it asked, not when the author chased it.
+  assert.equal(rev(100, "alice").assignedAt, "2026-07-02T00:00:00Z");
+});
+
 test("replay keeps the last event: re-requested by me after someone else's removal", () => {
   assert.equal(rev(101, "alice").origin, "mine");
   assert.equal(rev(101, "alice").assignedBy, "me");
@@ -320,12 +330,25 @@ test("the ceiling on every duration is the age of the effort, and needs a start 
 
 /* --------------------------------- internals --------------------------------- */
 
-test("replayAssignments is order-independent and records when", () => {
+test("replayAssignments is order-independent and keeps every request still standing", () => {
   const events = [
     { __typename: "ReviewRequestedEvent", createdAt: "2026-01-03T00:00:00Z", actor: { login: "b" }, requestedReviewer: { login: "x" } },
     { __typename: "ReviewRequestedEvent", createdAt: "2026-01-01T00:00:00Z", actor: { login: "a" }, requestedReviewer: { login: "x" } },
   ];
+  const standing = [
+    { actor: "a", at: "2026-01-01T00:00:00Z" },
+    { actor: "b", at: "2026-01-03T00:00:00Z" },
+  ];
   // The API returns events chronologically, but attribution must not depend on that.
-  assert.deepEqual(replayAssignments(events).get("x"), { actor: "b", at: "2026-01-03T00:00:00Z" });
-  assert.deepEqual(replayAssignments([...events].reverse()).get("x"), { actor: "b", at: "2026-01-03T00:00:00Z" });
+  assert.deepEqual(replayAssignments(events).get("x"), standing);
+  assert.deepEqual(replayAssignments([...events].reverse()).get("x"), standing);
+});
+
+test("a removal clears the asks before it, and only those", () => {
+  const events = [
+    { __typename: "ReviewRequestedEvent", createdAt: "2026-01-01T00:00:00Z", actor: { login: "a" }, requestedReviewer: { login: "x" } },
+    { __typename: "ReviewRequestRemovedEvent", createdAt: "2026-01-02T00:00:00Z", actor: { login: "a" }, requestedReviewer: { login: "x" } },
+    { __typename: "ReviewRequestedEvent", createdAt: "2026-01-03T00:00:00Z", actor: { login: "b" }, requestedReviewer: { login: "x" } },
+  ];
+  assert.deepEqual(replayAssignments(events).get("x"), [{ actor: "b", at: "2026-01-03T00:00:00Z" }]);
 });
