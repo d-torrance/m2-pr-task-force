@@ -139,42 +139,41 @@ if $summary; then
              (.comments.nodes[] | select(.author.login == $pr.author.login) | .createdAt),
              (.reviews.nodes[] | select(.author.login == $pr.author.login) | .submittedAt) ] | max) as $author_at
         | ($reviews | last) as $last_review
-        | ($mine | last | .submittedAt // "") as $mine_at
-        | ([$reviews[] | select(.state == "APPROVED" and .author.login != me)] | last) as $other_ok
-        # Whose move it is, judged on the whole review side rather than one reviewer, because
-        # reviewers do not work in isolation: two people can look at a PR together and post
-        # once, and one of them going quiet after a colleague reviewed is not a stall.
-        | (if $last_review == null then
-             # Nobody has looked at all -- the wait is on everyone asked, this reviewer included.
-             { since: $author_at,
-               why: "no review yet, opened \($pr.createdAt | date)"
-                 + (if $author_at > $pr.createdAt then ", author last active \($author_at | date)" else "" end) }
-           elif $author_at > $last_review.submittedAt then
-             # Reviewed, answered, and nobody has been back since: the ball is on the review side.
-             { since: $author_at,
-               why: "\($last_review.author.login) reviewed \($last_review.submittedAt | date),"
-                 + " author responded \($author_at | date), no review since" }
-           elif $pick.at > $last_review.submittedAt and $mine_at < $pick.at then
-             # Asked after the last review had already been written, and not back since. The
-             # earlier round is not an answer this reviewer is waiting on -- it is the state of
-             # the PR they were asked to look at -- so the wait runs from the ask.
-             { since: $pick.at,
-               why: "picked \($pick.at | date), after the last review, nothing from \(me) since" }
-           elif $other_ok != null and $other_ok.submittedAt > $mine_at then
-             # A colleague has signed off and this reviewer has not been back since. The author
-             # has nothing to answer, so the only thing still outstanding is this sign-off.
-             { since: $other_ok.submittedAt,
-               why: "\($other_ok.author.login) approved \($other_ok.submittedAt | date),"
-                 + " nothing from \(me) since" }
+        # A review that asks the author for something -- a comment, changes requested, a
+        # dismissal. An approval is not one: it closes the reviewer out and leaves the author
+        # with nothing to answer, so it never moves the ball off the review side.
+        | ([$reviews[] | select(.state != "APPROVED")] | last) as $last_demand
+        | (if $last_demand != null
+              and $last_demand.submittedAt > $author_at
+              and $last_demand.submittedAt > $pick.at then
+             # Somebody asked the author for something after this reviewer was picked, and the
+             # author has not answered. Reviewers confer, and one of them going quiet while the
+             # author owes the other a reply is not a stall.
+             null
            else
-             # A review is in and unanswered: the author has the move, however long it has been.
-             null end) as $wait
+             # The ball is on the review side, and it landed there either when the author last
+             # acted or when the task force asked -- whichever came second. Never earlier than
+             # the ask: what a reviewer is late on starts the day they were picked.
+             ([$author_at, $pick.at] | max) as $since
+             | { since: $since,
+                 # Each reason ends with the ask that started the clock, so a reader can see
+                 # why the count is what it is -- an old PR freshly picked is not an old wait.
+                 why: (if $last_review == null then
+                         "no review yet, opened \($pr.createdAt | date)"
+                           + (if $author_at > $pr.createdAt then ", author last active \($author_at | date)" else "" end)
+                       elif $author_at > $last_review.submittedAt then
+                         "\($last_review.author.login) reviewed \($last_review.submittedAt | date),"
+                           + " author responded \($author_at | date), no review since"
+                       elif $last_review.state == "APPROVED" and $last_review.author.login != me then
+                         "\($last_review.author.login) approved \($last_review.submittedAt | date),"
+                           + " nothing from \(me) since"
+                       else
+                         "the last review predates the ask, nothing from \(me) since"
+                       end)
+                   + "; picked \($pick.at | date)" }
+           end) as $wait
         | select($wait != null)
-        # Never older than the ask itself. A PR can have been sitting since long before the task
-        # force existed, but what this reviewer is late on starts the day they were picked, and
-        # a nudge that claims otherwise is one the reader can rightly ignore.
-        | ([$wait.since, $pick.at] | max) as $since
-        | ((now - ($since | fromdateiso8601)) / 86400 | floor) as $waited
+        | ((now - ($wait.since | fromdateiso8601)) / 86400 | floor) as $waited
         | select($waited >= days)
         | { number, url, title, waited: $waited, why: $wait.why }
       ]
