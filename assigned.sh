@@ -41,6 +41,12 @@ esac
 
 viewer_login=${arg_login:-$(gh api user --jq '.login')}
 
+# Who the task force is, matching build.js: whose requests count as its selections, and when it
+# began. The assigner has requested reviews as ordinary maintainer work for years, so without
+# the cutoff that history is indistinguishable from the task force.
+assigner=${TASK_FORCE_ASSIGNER:-d-torrance}
+start=${TASK_FORCE_START:-2026-07-06}
+
 if $summary; then
   # The stalled queue as prose, for an email. Plain text and no color: the tables below are
   # for a terminal, this is for somebody who will read it in a mail client.
@@ -81,12 +87,25 @@ if $summary; then
                 nodes { requestedReviewer { __typename ... on User { login } } }
               }
               reviews(first: 100) { nodes { author { login } state submittedAt } }
+              timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT], first: 100) {
+                nodes {
+                  __typename
+                  ... on ReviewRequestedEvent {
+                    createdAt actor { login } requestedReviewer { __typename ... on User { login } }
+                  }
+                  ... on ReviewRequestRemovedEvent {
+                    createdAt actor { login } requestedReviewer { __typename ... on User { login } }
+                  }
+                }
+              }
             }
           }
         }
       }' \
     --jq 'def me: "'"$viewer_login"'";
       def days: '"$days"';
+      def assigner: "'"$assigner"'";
+      def start: "'"$start"'";
       def date: fromdateiso8601 | strftime("%Y-%m-%d");
       def plural(n; unit): "\(n) \(unit)" + (if n == 1 then "" else "s" end);
 
@@ -99,6 +118,20 @@ if $summary; then
         | ([.reviewRequests.nodes[].requestedReviewer
             | select(.__typename == "User" and .login == me)] | length > 0) as $requested
         | select($requested or $decision != "APPROVED")
+        # The task force queue, not every review this person has ever been near: the request has
+        # to be one the assigner made, on or after the day the effort started. Replayed off the
+        # timeline because the request list does not say who asked, and a removal wipes the asks
+        # before it. Every ask still standing is kept, and the assigner own one wins over a later
+        # nudge from anybody else -- GitHub files a re-request as a fresh event, so last-one-wins
+        # would hand the pick to whoever chased the reviewer last.
+        | (reduce (.timelineItems.nodes | sort_by(.createdAt))[] as $e ({};
+             ($e.requestedReviewer.login) as $who
+             | if $who == null then .
+               elif $e.__typename == "ReviewRequestedEvent" then
+                 .[$who] += [{ actor: $e.actor.login, at: $e.createdAt }]
+               else del(.[$who]) end)) as $asked
+        | ([($asked[me] // [])[] | select(.actor == assigner and .at >= start)] | first) as $pick
+        | select($pick != null)
         # Everything the author has done, review comments of their own included: the PR goes
         # back to them whenever one of these is the last thing that happened.
         | ([ .createdAt,
@@ -131,7 +164,11 @@ if $summary; then
              # A review is in and unanswered: the author has the move, however long it has been.
              null end) as $wait
         | select($wait != null)
-        | ((now - ($wait.since | fromdateiso8601)) / 86400 | floor) as $waited
+        # Never older than the ask itself. A PR can have been sitting since long before the task
+        # force existed, but what this reviewer is late on starts the day they were picked, and
+        # a nudge that claims otherwise is one the reader can rightly ignore.
+        | ([$wait.since, $pick.at] | max) as $since
+        | ((now - ($since | fromdateiso8601)) / 86400 | floor) as $waited
         | select($waited >= days)
         | { number, url, title, waited: $waited, why: $wait.why }
       ]
