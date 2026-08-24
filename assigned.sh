@@ -1,12 +1,124 @@
 #!/bin/bash
 set -euo pipefail
 
-if [ $# -gt 1 ]; then
-  echo "usage: $(basename "$0") [username]" >&2
-  exit 1
-fi
+usage() {
+  cat >&2 <<EOF
+usage: $(basename "$0") [--summary] [--days N] [username]
 
-viewer_login=${1:-$(gh api user --jq '.login')}
+  --summary   plain-text list of the reviews that have gone unanswered the
+              longest, for pasting into an email, instead of the tables
+  --days N    how long unanswered counts as stalled (default 21, --summary only)
+  username    whose queue to report on (default: the authenticated user)
+EOF
+}
+
+summary=false
+days=21
+arg_login=""
+
+while [ $# -gt 0 ]; do
+  case $1 in
+    --summary) summary=true ;;
+    --days) shift; days=${1:-} ;;
+    --days=*) days=${1#*=} ;;
+    -h|--help) usage; exit 0 ;;
+    -*) echo "unknown option: $1" >&2; usage; exit 1 ;;
+    *)
+      if [ -n "$arg_login" ]; then
+        echo "too many arguments" >&2
+        usage
+        exit 1
+      fi
+      arg_login=$1
+      ;;
+  esac
+  shift
+done
+
+case $days in
+  "" | *[!0-9]*) echo "--days takes a whole number of days" >&2; exit 1 ;;
+esac
+
+viewer_login=${arg_login:-$(gh api user --jq '.login')}
+
+if $summary; then
+  # The stalled queue as prose, for an email. Plain text and no color: the tables below are
+  # for a terminal, this is for somebody who will read it in a mail client.
+  #
+  # "Unanswered" is about whose move it is. A review that is in and has not been answered by
+  # the author is the author's to move, however old it is, so the wait is measured from the
+  # last thing the author did -- opening the PR, pushing, or replying -- and counted only
+  # when the reviewer has not acted since. A re-request with no push behind it starts from
+  # the review it followed, which is the closest thing to a request timestamp there is.
+  #
+  # GraphQL rather than `gh pr list --json commits`, which asks for every commit of every PR
+  # and blows the server's node limit; here one PR needs only its last commit.
+  #
+  # Replies inside a review thread are not comments on the PR, so an author who only ever
+  # answers inline can read as quieter than they are. That errs toward listing a PR, which is
+  # the safe direction for a nudge list.
+  gh api graphql \
+    -F q="repo:Macaulay2/M2 is:pr is:open review-involves:$viewer_login" \
+    -f query='
+      query($q: String!) {
+        search(query: $q, type: ISSUE, first: 100) {
+          nodes {
+            ... on PullRequest {
+              number url title createdAt
+              author { login }
+              commits(last: 1) { nodes { commit { committedDate } } }
+              comments(last: 30) { nodes { author { login } createdAt } }
+              reviewRequests(first: 30) {
+                nodes { requestedReviewer { __typename ... on User { login } } }
+              }
+              reviews(first: 100) { nodes { author { login } state submittedAt } }
+            }
+          }
+        }
+      }' \
+    --jq 'def me: "'"$viewer_login"'";
+      def days: '"$days"';
+      def date: fromdateiso8601 | strftime("%Y-%m-%d");
+      def plural(n; unit): "\(n) \(unit)" + (if n == 1 then "" else "s" end);
+
+      [ .data.search.nodes[]
+        | . as $pr
+        | ([.reviews.nodes[] | select(.author.login == me)] | sort_by(.submittedAt)) as $mine
+        | ([$mine[] | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")]
+            | last | .state // "") as $decision
+        | ([.reviewRequests.nodes[].requestedReviewer
+            | select(.__typename == "User" and .login == me)] | length > 0) as $requested
+        | select($requested or $decision != "APPROVED")
+        | ([ .createdAt,
+             (.commits.nodes[].commit.committedDate),
+             (.comments.nodes[] | select(.author.login == $pr.author.login) | .createdAt) ] | max) as $author_at
+        | ($mine | last) as $last
+        | (if $last == null then
+             { since: $author_at,
+               why: "no review yet, opened \($pr.createdAt | date)"
+                 + (if $author_at > $pr.createdAt then ", author last active \($author_at | date)" else "" end) }
+           elif $author_at > $last.submittedAt then
+             { since: $author_at,
+               why: "reviewed \($last.submittedAt | date), author responded \($author_at | date), no re-review since" }
+           elif $requested then
+             { since: $last.submittedAt, why: "re-review requested since \($last.submittedAt | date)" }
+           else null end) as $wait
+        | select($wait != null)
+        | ((now - ($wait.since | fromdateiso8601)) / 86400 | floor) as $waited
+        | select($waited >= days)
+        | { number, url, title, waited: $waited, why: $wait.why }
+      ]
+      | sort_by(-.waited)
+      | if length == 0 then
+          "Nothing in the review queue for \(me) has been waiting \(plural(days; "day")) or more."
+        else
+          "Macaulay2/M2 reviews waiting on \(me) for \(plural(days; "day")) or more"
+          + " -- \(length) of them, as of \(now | strftime("%Y-%m-%d")):\n\n"
+          + ([ .[] | "* #\(.number) \(.title)\n  \(.url)\n  Waiting \(plural(.waited; "day")): \(.why)." ]
+             | join("\n\n"))
+        end'
+  exit 0
+fi
 
 gh pr list -R Macaulay2/M2 \
   --state=all \
