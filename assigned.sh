@@ -45,11 +45,20 @@ if $summary; then
   # The stalled queue as prose, for an email. Plain text and no color: the tables below are
   # for a terminal, this is for somebody who will read it in a mail client.
   #
-  # "Unanswered" is about whose move it is. A review that is in and has not been answered by
-  # the author is the author's to move, however old it is, so the wait is measured from the
-  # last thing the author did -- opening the PR, pushing, or replying -- and counted only
-  # when the reviewer has not acted since. A re-request with no push behind it starts from
-  # the review it followed, which is the closest thing to a request timestamp there is.
+  # "Unanswered" is about whose move it is, and the move belongs to a side rather than to a
+  # person: reviewers confer, and two of them who look at a PR together post once between
+  # them, so one going quiet after a colleague reviewed is not a stall. A review that is in
+  # and unanswered is therefore the author's move whoever wrote it, and the wait is measured
+  # from the last thing the author did -- opening the PR, pushing, commenting, or reviewing
+  # their own PR.
+  #
+  # The exception is an approval by somebody else, which asks the author for nothing: if this
+  # reviewer has not been back since one landed, their sign-off is what the PR is still
+  # waiting on, and the wait runs from that approval.
+  #
+  # An outstanding re-request is deliberately not a reason on its own. GitHub does not date a
+  # request, so a stale one is indistinguishable from a fresh one, and the review side has
+  # already answered whatever it followed.
   #
   # GraphQL rather than `gh pr list --json commits`, which asks for every commit of every PR
   # and blows the server's node limit; here one PR needs only its last commit.
@@ -83,26 +92,44 @@ if $summary; then
 
       [ .data.search.nodes[]
         | . as $pr
-        | ([.reviews.nodes[] | select(.author.login == me)] | sort_by(.submittedAt)) as $mine
+        | ([.reviews.nodes[] | select(.author.login != $pr.author.login)] | sort_by(.submittedAt)) as $reviews
+        | ([$reviews[] | select(.author.login == me)] | sort_by(.submittedAt)) as $mine
         | ([$mine[] | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")]
             | last | .state // "") as $decision
         | ([.reviewRequests.nodes[].requestedReviewer
             | select(.__typename == "User" and .login == me)] | length > 0) as $requested
         | select($requested or $decision != "APPROVED")
+        # Everything the author has done, review comments of their own included: the PR goes
+        # back to them whenever one of these is the last thing that happened.
         | ([ .createdAt,
              (.commits.nodes[].commit.committedDate),
-             (.comments.nodes[] | select(.author.login == $pr.author.login) | .createdAt) ] | max) as $author_at
-        | ($mine | last) as $last
-        | (if $last == null then
+             (.comments.nodes[] | select(.author.login == $pr.author.login) | .createdAt),
+             (.reviews.nodes[] | select(.author.login == $pr.author.login) | .submittedAt) ] | max) as $author_at
+        | ($reviews | last) as $last_review
+        | ($mine | last | .submittedAt // "") as $mine_at
+        | ([$reviews[] | select(.state == "APPROVED" and .author.login != me)] | last) as $other_ok
+        # Whose move it is, judged on the whole review side rather than one reviewer, because
+        # reviewers do not work in isolation: two people can look at a PR together and post
+        # once, and one of them going quiet after a colleague reviewed is not a stall.
+        | (if $last_review == null then
+             # Nobody has looked at all -- the wait is on everyone asked, this reviewer included.
              { since: $author_at,
                why: "no review yet, opened \($pr.createdAt | date)"
                  + (if $author_at > $pr.createdAt then ", author last active \($author_at | date)" else "" end) }
-           elif $author_at > $last.submittedAt then
+           elif $author_at > $last_review.submittedAt then
+             # Reviewed, answered, and nobody has been back since: the ball is on the review side.
              { since: $author_at,
-               why: "reviewed \($last.submittedAt | date), author responded \($author_at | date), no re-review since" }
-           elif $requested then
-             { since: $last.submittedAt, why: "re-review requested since \($last.submittedAt | date)" }
-           else null end) as $wait
+               why: "\($last_review.author.login) reviewed \($last_review.submittedAt | date),"
+                 + " author responded \($author_at | date), no review since" }
+           elif $other_ok != null and $other_ok.submittedAt > $mine_at then
+             # A colleague has signed off and this reviewer has not been back since. The author
+             # has nothing to answer, so the only thing still outstanding is this sign-off.
+             { since: $other_ok.submittedAt,
+               why: "\($other_ok.author.login) approved \($other_ok.submittedAt | date),"
+                 + " nothing from \(me) since" }
+           else
+             # A review is in and unanswered: the author has the move, however long it has been.
+             null end) as $wait
         | select($wait != null)
         | ((now - ($wait.since | fromdateiso8601)) / 86400 | floor) as $waited
         | select($waited >= days)
