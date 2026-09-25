@@ -52,8 +52,8 @@ is](#whose-turn-it-is):
 | Column | Meaning |
 |---|---|
 | **awaiting first review** | their move, and they have not reviewed since being picked |
-| **follow-up owed** | their move, and they have reviewed before: the author has answered since, or re-requested them |
-| **waiting on author** | the author owes a reply to a review, so there is nothing to ask this reviewer yet |
+| **awaiting follow-up review** | their move, and they have reviewed before: the author has answered since, or re-requested them |
+| **waiting on author** | the author owes a reply to a review, so there is nothing to ask this reviewer yet — set apart, and marked *not in total* |
 
 **Total** is the first two. The third sits beside it rather than in it: it used to be folded,
 with the second, into a single "reviewed, not approved" column, which ranked a reviewer the author

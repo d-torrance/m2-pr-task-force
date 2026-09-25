@@ -184,6 +184,10 @@ tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transp
 .legend .sw-2 { background: var(--stage-2); }
 #w-table td { border-bottom: 1px solid var(--grid); }
 #w-table th:not(:first-child), #w-table td:not(:first-child) { width: 18%; }
+/* The author's column is set apart from the two the total adds up, so the row does not read
+   as a sum that fails to add. */
+#w-table th:last-child, #w-table td:last-child { border-left: 1px solid var(--grid); padding-left: 16px; }
+.th-note { display: block; font-weight: 400; color: var(--text-muted); font-size: 11px; }
 #a-table td { border-bottom: 1px solid var(--grid); }
 #a-table th:not(:first-child), #a-table td:not(:first-child) { width: 28%; }
 
@@ -284,7 +288,7 @@ export function render(data) {
       <div class="v num" id="kpi-prs">–</div>
       <div class="k">open PRs up for review <span class="k2" id="kpi-prs-note"></span></div>
     </div>
-    <div class="kpi"><div class="v num" id="kpi-mine">–</div><div class="k">waiting on a task force selection <span class="k2">a first review or a follow-up</span></div></div>
+    <div class="kpi"><div class="v num" id="kpi-mine">–</div><div class="k">waiting on a task force selection <span class="k2">a first review or a follow-up review</span></div></div>
     <div class="kpi flag">
       <div class="v num" id="kpi-untriaged">–</div>
       <div class="k">opened since <span id="kpi-untriaged-since">…</span> with no reviewer from
@@ -353,20 +357,20 @@ export function render(data) {
   <section>
     <div class="head">
       <h2>Reviewer workload</h2>
-      <span class="note">task force selections each reviewer still owes something on</span>
+      <span class="note">task force selections waiting on each reviewer</span>
       <span class="legend">
-        <span><span class="sw sw-1"></span>awaiting a first review</span>
-        <span><span class="sw sw-2"></span>owed a follow-up</span>
+        <span><span class="sw sw-1"></span>awaiting first review</span>
+        <span><span class="sw sw-2"></span>awaiting follow-up review</span>
       </span>
     </div>
     <div class="scroll">
       <table id="w-table">
         <thead><tr>
           <th data-wsort="reviewer">Reviewer</th>
-          <th data-wsort="total">Total</th>
-          <th data-wsort="waiting">Awaiting first review</th>
-          <th data-wsort="followup">Follow-up owed</th>
-          <th data-wsort="author">Waiting on author</th>
+          <th data-wsort="total" title="Awaiting first review plus awaiting follow-up review">Total</th>
+          <th data-wsort="waiting" title="Picked, and has not reviewed yet">Awaiting first review</th>
+          <th data-wsort="followup" title="Has reviewed, and the author has answered or re-requested them since">Awaiting follow-up review</th>
+          <th data-wsort="author" title="Has reviewed, and the author has not answered yet. Not in the total: there is nothing to ask the reviewer for until they do">Waiting on author <span class="th-note">not in total</span></th>
         </tr></thead>
         <tbody id="w-body"></tbody>
       </table>

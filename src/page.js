@@ -104,7 +104,7 @@ function reviewerSpan(r, view) {
 
 const TURN_WORDS = {
   first: "Owes a first review",
-  followup: "Owes a follow-up",
+  followup: "Owes a follow-up review",
   author: "Waiting on the author",
 };
 const owesLook = (t) => t?.kind === "first" || t?.kind === "followup";
@@ -344,7 +344,7 @@ function drawWaitTimes() {
   // PRs nobody has been asked to review are the "nobody on the hook" KPI above, not this.
   $("#tf-open-note").textContent =
     `of the ${o.prs} open PRs with a reviewer ${DATA.assigner} requested, ${o.waiting} are waiting on one ` +
-    `(${o.followup} for a follow-up), ${o.onAuthor} on the author, and ${o.done} are approved`;
+    `(${o.followup} for a follow-up review), ${o.onAuthor} on the author, and ${o.done} are approved`;
   // Not the count of waiting PRs: that is definitionally the same number as the
   // "waiting on a task force selection" KPI directly above, and printing it twice
   // just costs a slot. The note line carries the denominator instead.
@@ -437,8 +437,8 @@ const drawWorkload = () =>
         bar: true,
         // The two stages in order, so the bar reads as a progress split rather than a total.
         segments: (r) => [
-          { value: r.waiting, title: `${r.waiting} awaiting a first review` },
-          { value: r.followup, title: `${r.followup} owed a follow-up` },
+          { value: r.waiting, title: `${r.waiting} awaiting first review` },
+          { value: r.followup, title: `${r.followup} awaiting follow-up review` },
         ],
       },
       { key: "waiting" },
