@@ -170,7 +170,7 @@ if $summary; then
              | { since: $since,
                  # Each reason ends with the ask that started the clock, so a reader can see
                  # why the count is what it is -- an old PR freshly picked is not an old wait.
-                 why: (if $last_review == null then
+                 why: ((if $last_review == null then
                          "no review yet, opened \($pr.createdAt | date)"
                            + (if $author_at > $pr.createdAt then ", author last active \($author_at | date)" else "" end)
                        elif $author_at > $last_review.submittedAt then
@@ -182,7 +182,7 @@ if $summary; then
                        else
                          "the last review predates the ask, nothing from \(me) since"
                        end)
-                   + "; picked \($pick.at | date)" }
+                   + "; picked \($pick.at | date)") }
            end) as $wait
         | select($wait != null)
         | ((now - ($wait.since | fromdateiso8601)) / 86400 | floor) as $waited
