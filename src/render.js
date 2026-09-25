@@ -376,8 +376,8 @@ export function render(data) {
 
 <div id="panel-merged" role="tabpanel" hidden>
   <div class="kpis">
-    <div class="kpi"><div class="v num" id="kpi-tf-recent">–</div><div class="k">merged with a task force approval in the last <span id="kpi-tf-recent-days">30</span> days <span class="k2">since <span id="kpi-tf-recent-since"></span></span></div></div>
-    <div class="kpi"><div class="v num" id="kpi-tf-window">–</div><div class="k">merged with a task force approval in the last <span class="months">3</span> months <span class="k2">since <span id="merged-since"></span></span></div></div>
+    <div class="kpi"><div class="v num" id="kpi-tf-recent">–</div><div class="k">task force PRs merged in the last <span id="kpi-tf-recent-days">30</span> days <span class="k2">since <span id="kpi-tf-recent-since"></span></span></div></div>
+    <div class="kpi"><div class="v num" id="kpi-tf-window">–</div><div class="k">task force PRs merged in the last <span class="months">3</span> months <span class="k2">since <span id="merged-since"></span></span></div></div>
   </div>
 
   <section>
@@ -410,6 +410,7 @@ export function render(data) {
       <select id="merged-f-reviewer" aria-label="Filter by reviewer"></select>
       <select id="merged-f-mode" aria-label="Filter by approval">
         <option value="all">Any approval</option>
+        <option value="mine">Has a task force selection</option>
         <option value="approved">Approved by anyone</option>
         <option value="approved-mine">Approved by a task force selection</option>
         <option value="unapproved">Merged with no approval</option>

@@ -229,18 +229,22 @@ test("only approvals from a task force selection count as its output", () => {
   assert.equal(appr(cut, "alice").mine, 1); // requested in July -- genuinely the task force
 });
 
-test("the task force stat counts merged PRs, not approvals", () => {
-  assert.equal(data.merged.stats.taskForce, 2); // #200 and #201, without a cutoff
-  assert.equal(cut.merged.stats.taskForce, 1); // only #200 once May is excluded
+test("the task force stat counts merged PRs with a pick, approved by the pick or not", () => {
+  // #203 counts although carol never reviewed: a pick can approve by merging, or review
+  // alongside whoever did approve, and neither shows as an approval from the pick.
+  assert.equal(data.merged.stats.taskForce, 3); // #200, #201 and #203, without a cutoff
+  assert.equal(cut.merged.stats.taskForce, 2); // #200 and #203 once May is excluded
+  // The same PRs the assignment -> merge figures measure.
+  assert.equal(data.merged.stats.taskForce, data.merged.taskForce.prs);
 });
 
 test("task force merges are also counted over the last 30 days", () => {
-  // The snapshot is 2026-07-15, so the window opens 2026-06-15: #200 (merged 07-09) is in it,
-  // #201 (merged in May) is not.
-  assert.equal(data.merged.stats.taskForceRecent, 1);
+  // The snapshot is 2026-07-15, so the window opens 2026-06-15: #200 (merged 07-09) and #203
+  // (07-11) are in it, #201 (merged in May) is not.
+  assert.equal(data.merged.stats.taskForceRecent, 2);
   assert.equal(data.merged.stats.recentDays, 30);
   assert.equal(data.merged.stats.recentSince, "2026-06-15");
-  assert.equal(cut.merged.stats.taskForceRecent, 1);
+  assert.equal(cut.merged.stats.taskForceRecent, 2);
   assert.equal(data.merged.stats.prs, 4);
 });
 

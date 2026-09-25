@@ -565,9 +565,11 @@ function reconcileMerged(rawPrs, me, start, { since, months, now }) {
 
   const approvals = approvalsFrom(prs);
   const taskForce = mergedTaskForce(prs);
-  // Merges carrying an approval from someone the assigner put there: the task force's actual
-  // output. Whether other merges had an approval is M2's business, not the task force's.
-  const approvedByPick = prs.filter((p) => p.reviewers.some((r) => r.state === "APPROVED" && r.origin === "mine"));
+  // Merges the task force had a pick on: its actual output. Deliberately not "approved by a
+  // pick", which misses real task force reviews that never show as one -- a pick with merge
+  // rights who approves by merging, or one who reviewed alongside a maintainer who then
+  // approved for both. The same PRs the assignment -> merge figures measure.
+  const picked = prs.filter((p) => p.reviewers.some((r) => r.origin === "mine"));
   const recentSince = new Date(Date.parse(now) - RECENT_DAYS * DAY_MS).toISOString();
 
   return {
@@ -578,10 +580,10 @@ function reconcileMerged(rawPrs, me, start, { since, months, now }) {
     taskForce,
     stats: {
       prs: prs.length,
-      taskForce: approvedByPick.length,
+      taskForce: picked.length,
       // The same, over the last RECENT_DAYS: the full window is mostly history once the effort
       // is a few months old, and this is the number that says what it is doing now.
-      taskForceRecent: approvedByPick.filter((p) => p.mergedAt >= recentSince).length,
+      taskForceRecent: picked.filter((p) => p.mergedAt >= recentSince).length,
       recentDays: RECENT_DAYS,
       recentSince: day(recentSince),
     },

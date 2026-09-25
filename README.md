@@ -6,8 +6,8 @@ A dashboard of pull requests on [Macaulay2/M2][m2] — who wrote them, what they
 - **Open** — every open PR that is up for review, plus a reviewer workload table for spreading
   review load. That means all non-drafts, and drafts labelled `JSAG` — those are opened as drafts
   by policy but are still meant to be reviewed. Other drafts are left out.
-- **Merged** — everything merged in the last 3 months, led by how many merged with a task force
-  approval in the last 30 days and in the full window, plus how many each reviewer approved.
+- **Merged** — everything merged in the last 3 months, led by how many PRs with a task force
+  selection merged in the last 30 days and in the full window, plus how many each reviewer approved.
 
 Published daily to GitHub Pages. Run `npm start` any time to regenerate it locally.
 

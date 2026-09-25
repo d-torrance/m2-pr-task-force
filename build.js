@@ -58,7 +58,7 @@ console.log(`  ${rq.answered}/${rq.total} requests answered — median ${rq.medi
 
 const m = data.merged.stats;
 console.log(`\nmerged since ${since} (${MONTHS} months):`);
-console.log(`  ${m.prs} merged — ${m.taskForce} with an approval from a task force pick, ${m.taskForceRecent} of them in the last ${m.recentDays} days`);
+console.log(`  ${m.prs} merged — ${m.taskForce} with a task force pick, ${m.taskForceRecent} of them in the last ${m.recentDays} days`);
 console.log(`  ${data.merged.approvals.length} reviewers`);
 
 const mt = data.merged.taskForce;
