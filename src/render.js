@@ -30,6 +30,9 @@ const CSS = `
      see that order in the color. Blue steps 250 and 450; the near-surface end clears 2:1. */
   --stage-1: #86b6ef;
   --stage-2: #2a78d6;
+  /* The third segment is not a later stage but the other side's move: assigned, nothing to do
+     today. So it steps out of the hue into a neutral, which keeps "blue = their move" true. */
+  --stage-3: #a5a49c;
   --good: #0ca30c;
   --serious: #ec835a;
   --accent-ink: #184f95;
@@ -50,6 +53,7 @@ const CSS = `
        the more prominent of the two. Blue steps 550 and 400. */
     --stage-1: #1c5cab;
     --stage-2: #3987e5;
+    --stage-3: #6b6a65;
     --good: #0ca30c;
     --serious: #ec835a;
     --accent-ink: #86b6ef;
@@ -175,6 +179,7 @@ tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transp
 #a-table .w-bar .bar-fill { border-radius: 0 4px 4px 0; }
 .seg-1 { background: var(--stage-1); }
 .seg-2 { background: var(--stage-2); }
+.seg-3 { background: var(--stage-3); }
 /* The 2px surface gap the segments are separated by, painted over the start of the second
    one rather than inserted between them, so a split bar is exactly as long as an unsplit
    one of the same total. Never a border: that would add ink that isn't data. */
@@ -182,12 +187,9 @@ tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transp
 .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
 .legend .sw-1 { background: var(--stage-1); }
 .legend .sw-2 { background: var(--stage-2); }
+.legend .sw-3 { background: var(--stage-3); }
 #w-table td { border-bottom: 1px solid var(--grid); }
 #w-table th:not(:first-child), #w-table td:not(:first-child) { width: 18%; }
-/* The author's column is set apart from the two the total adds up, so the row does not read
-   as a sum that fails to add. */
-#w-table th:last-child, #w-table td:last-child { border-left: 1px solid var(--grid); padding-left: 16px; }
-.th-note { display: block; font-weight: 400; color: var(--text-muted); font-size: 11px; }
 #a-table td { border-bottom: 1px solid var(--grid); }
 #a-table th:not(:first-child), #a-table td:not(:first-child) { width: 28%; }
 
@@ -357,20 +359,21 @@ export function render(data) {
   <section>
     <div class="head">
       <h2>Reviewer workload</h2>
-      <span class="note">task force selections waiting on each reviewer</span>
+      <span class="note">task force selections each reviewer is on, and whose move each one is</span>
       <span class="legend">
         <span><span class="sw sw-1"></span>awaiting first review</span>
         <span><span class="sw sw-2"></span>awaiting follow-up review</span>
+        <span><span class="sw sw-3"></span>waiting on author</span>
       </span>
     </div>
     <div class="scroll">
       <table id="w-table">
         <thead><tr>
           <th data-wsort="reviewer">Reviewer</th>
-          <th data-wsort="total" title="Awaiting first review plus awaiting follow-up review">Total</th>
+          <th data-wsort="total" title="Every task force PR this reviewer is on">Total</th>
           <th data-wsort="waiting" title="Picked, and has not reviewed yet">Awaiting first review</th>
           <th data-wsort="followup" title="Has reviewed, and the author has answered or re-requested them since">Awaiting follow-up review</th>
-          <th data-wsort="author" title="Has reviewed, and the author has not answered yet. Not in the total: there is nothing to ask the reviewer for until they do">Waiting on author <span class="th-note">not in total</span></th>
+          <th data-wsort="author" title="Has reviewed, and the author has not answered yet: nothing to ask the reviewer for until they do">Waiting on author</th>
         </tr></thead>
         <tbody id="w-body"></tbody>
       </table>

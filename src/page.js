@@ -435,15 +435,16 @@ const drawWorkload = () =>
       {
         key: "total",
         bar: true,
-        // The two stages in order, so the bar reads as a progress split rather than a total.
+        // Their move first, in stage order, then the author's -- so the blue part of the bar is
+        // what this reviewer could act on today.
         segments: (r) => [
           { value: r.waiting, title: `${r.waiting} awaiting first review` },
           { value: r.followup, title: `${r.followup} awaiting follow-up review` },
+          { value: r.author, title: `${r.author} waiting on the author` },
         ],
       },
       { key: "waiting" },
       { key: "followup" },
-      // Beside the total rather than in it: nothing to ask this reviewer until the author answers.
       { key: "author" },
     ],
   });

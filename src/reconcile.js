@@ -114,9 +114,10 @@ function reviewersFor(pr, me, start) {
  *   waiting  - their move, and they have not reviewed since they were picked: a first look
  *   followup - their move, and they have reviewed before: the author has answered since
  *   author   - the author owes a reply to a review, so there is nothing to ask this person yet
- * `total` counts only the first two, i.e. how many of the task force's PRs are waiting on this
- * person right now. Lumping the third in, as a single "reviewed, not approved" column once did,
- * ranked a reviewer the author owed three replies alongside one sitting on three answers.
+ * `total` is all three: every task force PR this person is on, since one waiting on the author
+ * is still theirs even with nothing to do today. The split is what says which are their move --
+ * a single "reviewed, not approved" column once ranked a reviewer the author owed three replies
+ * alongside one sitting on three answers.
  *
  * Only `waiting` survives in GitHub's own view of things, because it deletes the request as
  * soon as a review is submitted. Counting that alone -- as this table once did -- reported the
@@ -148,7 +149,7 @@ function workloadFrom(prs) {
     }
   }
 
-  for (const row of byLogin.values()) row.total = row.waiting + row.followup;
+  for (const row of byLogin.values()) row.total = row.waiting + row.followup + row.author;
 
   return [...byLogin.values()].sort(
     (a, b) => b.total - a.total || b.waiting - a.waiting || a.login.localeCompare(b.login),

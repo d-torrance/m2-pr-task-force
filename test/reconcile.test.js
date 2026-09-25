@@ -118,8 +118,9 @@ test("workload splits what a pick owes by whose turn it is", () => {
   // and she was re-requested: she owes a follow-up, not a first look.
   assert.deepEqual(who("alice"), { login: "alice", waiting: 2, followup: 1, author: 0, total: 3 });
   // bob commented on #107 and the author has not answered. He keeps his row -- GitHub deleted
-  // his request, but not his part in the PR -- and the PR counts as the author's, not his.
-  assert.deepEqual(who("bob"), { login: "bob", waiting: 0, followup: 0, author: 1, total: 0 });
+  // his request, but not his part in the PR -- and the PR counts as the author's move. It is
+  // still his PR, so it is in his total.
+  assert.deepEqual(who("bob"), { login: "bob", waiting: 0, followup: 0, author: 1, total: 1 });
   // Another pick's approval does not answer for gina: she asked for changes on #108 herself.
   assert.deepEqual(who("gina"), { login: "gina", waiting: 0, followup: 1, author: 0, total: 1 });
   assert.equal(who("hank").total, 0);

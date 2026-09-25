@@ -53,21 +53,23 @@ is](#whose-turn-it-is):
 |---|---|
 | **awaiting first review** | their move, and they have not reviewed since being picked |
 | **awaiting follow-up review** | their move, and they have reviewed before: the author has answered since, or re-requested them |
-| **waiting on author** | the author owes a reply to a review, so there is nothing to ask this reviewer yet — set apart, and marked *not in total* |
+| **waiting on author** | the author owes a reply to a review, so there is nothing to ask this reviewer yet |
 
-**Total** is the first two. The third sits beside it rather than in it: it used to be folded,
-with the second, into a single "reviewed, not approved" column, which ranked a reviewer the author
-owed three replies alongside one sitting on three answers — opposite answers to "who to ask next".
+**Total** is all three: a PR waiting on the author is still one the reviewer is assigned. The
+split is what matters for "who to ask next" — the last two used to be a single "reviewed, not
+approved" column, which ranked a reviewer the author owed three replies alongside one sitting on
+three answers.
 
-The bar under **Total** splits at its two stages, in one hue at two steps rather than two
-different colors: these are stages of one review, not two unrelated things, so the order should
-be visible in the color. The numbers stay in the columns beside it, so the split never rests on
-color alone.
+The bar under **Total** splits the same way. The reviewer's two stages are one hue at two steps
+rather than two different colors: they are stages of one review, so the order should be visible
+in the color. The author's move steps out of the hue into a neutral grey, so the blue part of a
+bar is always what the reviewer could act on today. The numbers stay in the columns beside it, so
+the split never rests on color alone.
 
 Only the first of those exists in GitHub's own view, and counting it alone — as this table used
 to — reports the task force's most engaged picks as carrying **nothing**: the moment they
 comment their request is deleted, while the PR still waits on their approval. **Total** is what
-the table sorts on, since it is the number that answers "who to ask next".
+the table sorts on — the load each reviewer carries — and the columns beside it sort too.
 
 Requests the task force did not make are left out, and so are the people who only ever appear
 that way. A maintainer who comments on many PRs unasked would otherwise rank near the top of a
