@@ -189,29 +189,38 @@ if $summary; then
               else [$author_acts[] | select(. > $last_demand.submittedAt)] | min end) as $answered
              | ([$pick.at, $answered, $last_push] | max) as $since
              # A push only earns a mention when it is what started the clock.
-             | (if $since == $last_push and $last_push > $pr.createdAt
-                then ", last pushed \($last_push | date)" else "" end) as $pushed
-             | ($tf_approval
-                | if . == null or .author.login == me then ""
-                  else ", \(.author.login) approved \(.submittedAt | date)" end) as $approved
+             | [if $since == $last_push and $last_push > $pr.createdAt
+                then { at: $last_push, text: "last pushed \($last_push | date)" } else empty end]
+                 as $pushed
+             | [$tf_approval | select(. != null and .author.login != me)
+                | { at: .submittedAt, text: "\(.author.login) approved \(.submittedAt | date)" }]
+                 as $approved
+             | { at: $pick.at, text: "picked \($pick.at | date)" } as $picked_event
+             | (if $tf_demand != null and $author_at > $tf_demand.submittedAt then
+                  ([$author_acts[] | select(. > $tf_demand.submittedAt)] | min) as $responded
+                  | { events: [ { at: $tf_demand.submittedAt,
+                                  text: "\($tf_demand.author.login) reviewed \($tf_demand.submittedAt | date)" },
+                                { at: $responded, text: "author responded \($responded | date)" },
+                                # Said once is enough when the push came the same day.
+                                ($pushed[] | select((.at | date) != ($responded | date))),
+                                $approved[], $picked_event ],
+                      tail: (if $approved == [] then "no review since" else "nothing from \(me) since" end) }
+                elif $tf_demand == null and $approved != [] then
+                  { events: [$approved[], $pushed[], $picked_event], tail: "nothing from \(me) since" }
+                elif $last_review == null then
+                  { events: [ { at: $pr.createdAt, text: "opened \($pr.createdAt | date)" },
+                              $pushed[], $picked_event ],
+                    tail: "no task force review since" }
+                else
+                  { events: [ { at: $last_review.submittedAt,
+                                text: "\($last_review.author.login) reviewed \($last_review.submittedAt | date)" },
+                              $pushed[], $picked_event ],
+                    tail: "nothing from \(me) since" }
+                end) as $story
              | { since: $since,
-                 # Each reason ends with the ask that started the clock, so a reader can see
-                 # why the count is what it is -- an old PR freshly picked is not an old wait.
-                 why: ((if $tf_demand != null and $author_at > $tf_demand.submittedAt then
-                         ([$author_acts[] | select(. > $tf_demand.submittedAt)] | min | date) as $responded
-                         | "\($tf_demand.author.login) reviewed \($tf_demand.submittedAt | date),"
-                           + " author responded \($responded)"
-                           + (if ($pushed | endswith($responded)) then "" else $pushed end)
-                           + $approved
-                           + (if $approved == "" then ", no review since" else ", nothing from \(me) since" end)
-                       elif $tf_demand == null and $approved != "" then
-                         $approved[2:] + ", nothing from \(me) since" + $pushed
-                       elif $last_review == null then
-                         "no task force review yet, opened \($pr.createdAt | date)" + $pushed
-                       else
-                         "the last review predates the ask, nothing from \(me) since" + $pushed
-                       end)
-                   + "; picked \($pick.at | date)") }
+                 # The story in the order it happened, the ask included, so a reader can see why
+                 # the count is what it is -- an old PR freshly picked is not an old wait.
+                 why: ([$story.events | sort_by(.at)[] | .text] + [$story.tail] | join(", ")) }
            end) as $wait
         | select($wait != null)
         | ((now - ($wait.since | fromdateiso8601)) / 86400 | floor) as $waited
