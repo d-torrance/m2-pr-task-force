@@ -2,13 +2,25 @@
 set -euo pipefail
 
 usage() {
-  cat >&2 <<EOF
+  cat <<EOF
 usage: $(basename "$0") [--summary] [--days N] [username]
+
+Report on a reviewer's Macaulay2/M2 queue. By default, two tables: the open
+PRs that still need the reviewer's attention (a request outstanding, or not
+yet approved), then the rest they have reviewed.
 
   --summary   plain-text list of the reviews that have gone unanswered the
               longest, for pasting into an email, instead of the tables
   --days N    how long unanswered counts as stalled (default 21, --summary only)
   username    whose queue to report on (default: the authenticated user)
+  -h, --help  show this help and exit
+
+--summary counts only the task force's own picks, set by the environment:
+
+  TASK_FORCE_ASSIGNER  whose review requests count (default d-torrance)
+  TASK_FORCE_START     ignore requests before this date (default 2026-07-06)
+
+Needs the GitHub CLI, gh, installed and authenticated.
 EOF
 }
 
@@ -22,11 +34,11 @@ while [ $# -gt 0 ]; do
     --days) shift; days=${1:-} ;;
     --days=*) days=${1#*=} ;;
     -h|--help) usage; exit 0 ;;
-    -*) echo "unknown option: $1" >&2; usage; exit 1 ;;
+    -*) echo "unknown option: $1" >&2; usage >&2; exit 1 ;;
     *)
       if [ -n "$arg_login" ]; then
         echo "too many arguments" >&2
-        usage
+        usage >&2
         exit 1
       fi
       arg_login=$1
