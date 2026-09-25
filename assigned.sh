@@ -89,9 +89,12 @@ def ago: age | if . == 0 then "today" elif . < 30 then "\(.)d" elif . < 365 then
 def cut($n): if length > $n then .[0:$n - 1] + "…" else . end;
 def pad($w): . + ([range($w - length)] | map(" ") | join(""));
 def paint($code): if use_color and $code != null then "\u001b[\($code)m\(.)\u001b[0m" else . end;
-# A table with a bold title. Each row is {cells, color}: the color goes on the first two
-# cells, the ID and the status, as it always has. Padded before it is painted, since the
-# escape codes would otherwise count toward the width.
+# A terminal hyperlink (OSC 8): clickable where the terminal supports it, plain text where it
+# does not. Only on a terminal, like the color, so a pipe or a file gets the bare text.
+def link($url): if use_color and $url != null then "\u001b]8;;\($url)\u001b\\\(.)\u001b]8;;\u001b\\" else . end;
+# A table with a bold title. Each row is {cells, color, url}: the color goes on the first two
+# cells, the ID and the status, as it always has, and the ID links to the PR. The padding goes
+# on after the escape codes, which would otherwise count toward the width.
 def table($title; $head; $rows):
   ([$head] + [$rows[].cells]) as $all
   | [range($head | length) as $i | [$all[][$i] | length] | max] as $w
@@ -99,7 +102,11 @@ def table($title; $head; $rows):
     + ([range($head | length) as $i | $head[$i] | pad($w[$i]) | paint("4")] | join("  ")) + "\n"
     + ([$rows[] | . as $row
         | [range(.cells | length) as $i
-           | .cells[$i] | pad($w[$i]) | paint(if $i < 2 then $row.color else null end)]
+           | .cells[$i] as $cell
+           | ($cell
+              | paint(if $i < 2 then $row.color else null end)
+              | if $i == 0 then link($row.url) else . end)
+             + ("" | pad($w[$i] - ($cell | length)))]
         | join("  ") | sub(" +$"; "")] | join("\n"));
 # Open, and up for review: any non-draft, plus a draft labelled JSAG, which the review policy
 # opens as a draft on purpose. The website tracks the same set.
@@ -313,7 +320,8 @@ out=$(task_force '
                          (.title | cut(50)),
                          (.labels | join(", ") | cut(40)),
                          (.updatedAt | ago) ],
-                color: {first: "34", followup: "36", author: "90"}[.turn] } ])
+                color: {first: "34", followup: "36", author: "90"}[.turn],
+                url } ])
     + (if $rows == [] then "\n(none)" else "" end)')
 pick_numbers=$(head -n 1 <<<"$out")
 tail -n +2 <<<"$out"
@@ -332,7 +340,7 @@ gh pr list -R Macaulay2/M2 \
   --state=all \
   --search "review-involves:$viewer_login" \
   --limit 2000 \
-  --json number,title,state,isDraft,labels,updatedAt,reviewRequests,reviews \
+  --json number,url,title,state,isDraft,labels,updatedAt,reviewRequests,reviews \
   --jq "$defs $common def picks: [$(sed 's/ /, /g' <<<"$pick_numbers")];"'
     [ .[]
       | select(.number as $n | any(picks[]; . == $n) | not)
@@ -345,7 +353,7 @@ gh pr list -R Macaulay2/M2 \
     | def row($status; $color):
         { cells: [ "#\(.number)", $status, (.title | cut(50)),
                    ([.labels[].name] | join(", ") | cut(40)), (.updatedAt | ago) ],
-          color: $color };
+          color: $color, url };
       table("Other open reviews";
             ["ID", "STATUS", "TITLE", "LABELS", "UPDATED"];
             [ $prs[] | select(.open)
