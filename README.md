@@ -104,7 +104,8 @@ M2's 21** supposedly untended PRs in a pile where somebody was already mid-revie
 ## Whose turn it is
 
 For each task force pick on an open PR, the build works out whose move it is, since when, and how
-it got there. The rules are the ones `assigned.sh --summary` uses, where they were worked out:
+it got there. The rules are the ones `assigned.sh` uses, where they were worked out, so its
+table matches a reviewer's row in the workload table:
 
 - **The move belongs to a side, not a person.** Any review that asks the author for something —
   anything but an approval — and that the author has not answered puts the PR on the author's
