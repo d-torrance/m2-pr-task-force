@@ -136,7 +136,7 @@ Three deliberate choices:
 - **Median, never mean.** The waits are severely right-skewed — a request from this morning
   shares the queue with one from 2024 — and a mean would describe no actual PR.
 - **Age bands, not just the median.** The median wait can read as five weeks while two thirds
-  of the queue sits in a single `31d+` pile. Only the bands show that, and the last band is the
+  of the queue sits in the single oldest band. Only the bands show that, and the last band is the
   one the page flags.
 - **Assignment → merge, not opened → merged.** PRs are picked up long after they were opened,
   so opened → merged charges the task force for neglect that predates it: measured that way its
@@ -151,7 +151,7 @@ And one statistic deliberately absent: **a cumulative "% of requests answered".*
 response rate but behaves like an odometer — the denominator only ever grows, so it drifts
 upward as old requests age into answers whatever this week looked like, and its ceiling is set
 by how often PRs merge with a request still outstanding (3 of 24 so far, so ~88%, not 100%).
-The current-state figures — median wait, longest wait, count past 30 days — answer the same
+The current-state figures — median wait, longest wait, count at 21 days or more — answer the same
 question without the drift.
 
 ## Usage

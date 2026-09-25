@@ -53,7 +53,7 @@ const rq = data.taskForce.requests;
 console.log(`\ntask force waits (${data.taskForce.ageDays} days in):`);
 console.log(`  ${t.waiting} of ${t.prs} picked PRs waiting on a pick (${t.firstLook} first look, ${t.followup} follow-up) — median ${t.medianDays}d, oldest ${t.oldestDays}d`);
 console.log(`  ${t.onAuthor} waiting on the author, ${t.done} approved by every pick`);
-console.log(`  ${t.stalled} waiting over ${t.stalledDays} days — bands ${t.bands.map((x) => `${x.label}:${x.n}`).join(" ")}`);
+console.log(`  ${t.stalled} waiting ${t.stalledDays} days or more — bands ${t.bands.map((x) => `${x.label}:${x.n}`).join(" ")}`);
 console.log(`  ${rq.answered}/${rq.total} requests answered — median ${rq.medianResponseDays}d to a review when one came`);
 
 const m = data.merged.stats;

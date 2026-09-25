@@ -322,11 +322,21 @@ test("the age bands partition the waiting queue, and the last band is the stalle
   const tf = data.open.taskForce;
   assert.deepEqual(
     tf.bands.map((b) => b.n),
-    [1, 3, 1, 1],
+    [1, 3, 0, 2],
   );
   assert.equal(tf.bands.reduce((n, b) => n + b.n, 0), tf.waiting);
-  // Exactly one band is flagged, and it is the >30d one the stalled figure counts.
+  // Exactly one band is flagged, and it is the 21d+ one the stalled figure counts -- the same
+  // line assigned.sh --summary draws by default.
+  assert.equal(tf.stalledDays, 21);
   assert.deepEqual(tf.bands.filter((b) => b.stalled).map((b) => b.n), [tf.stalled]);
+});
+
+test("a wait of exactly 21 days counts as long, and one of 20 does not", () => {
+  // Ten days on: #106 and #108 have waited exactly 21 days since 07-04, #103 exactly 20.
+  const later = reconcile({ ...raw, since: "2026-04-15", months: 3 }, { ...opts, generatedAt: "2026-07-25T00:00:00Z" });
+  const tf = later.open.taskForce;
+  assert.equal(tf.stalled, 4); // #101 (51d), #104 (34d), #106 and #108 (21d); not #103 (20d)
+  assert.deepEqual(tf.bands.map((b) => b.n), [0, 0, 2, 4]); // #100 (15.5d) and #103 (20d) sit below
 });
 
 test("the cutoff pulls waits out of the task force queue, as it does everything else", () => {

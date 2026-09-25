@@ -203,14 +203,18 @@ function median(xs) {
 
 // Age bands rather than one summary number: the median wait can read as five weeks while
 // two thirds of the queue sits in a single 31+ pile, and only the bands show that shape.
-const WAIT_BANDS = [7, 14, 30];
-const BAND_LABELS = ["0–7d", "8–14d", "15–30d", "31d+"];
-const STALLED_DAYS = 30;
+//
+// The last band starts at the same line `assigned.sh --summary` draws by default, so the email
+// and the page agree about which waits are long. Both count whole days, and both include the
+// line itself: 21 days is in, 20.9 is not.
+const WAIT_BANDS = [7, 14, 20];
+const BAND_LABELS = ["0–7d", "8–14d", "15–20d", "21d+"];
+const STALLED_DAYS = 21;
 
 const bandsOf = (values) =>
   BAND_LABELS.map((label, i) => ({
     label,
-    n: values.filter(
+    n: values.map(Math.floor).filter(
       (v) => (i === 0 || v > WAIT_BANDS[i - 1]) && (i === WAIT_BANDS.length || v <= WAIT_BANDS[i]),
     ).length,
     // The last band is the one that matters; the page flags it rather than colouring by size.
@@ -240,7 +244,7 @@ function openTaskForce(prs, now) {
     done: kind("done"),
     medianDays: median(waits),
     oldestDays: waits.length ? Math.max(...waits) : null,
-    stalled: waits.filter((w) => w > STALLED_DAYS).length,
+    stalled: waits.filter((w) => Math.floor(w) >= STALLED_DAYS).length,
     stalledDays: STALLED_DAYS,
     bands: bandsOf(waits),
   };

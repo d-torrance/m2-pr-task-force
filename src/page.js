@@ -118,7 +118,7 @@ function waitCell(pr) {
   if (owesLook(t)) {
     const d = days(t.since);
     td.textContent = `${d}d`;
-    if (d > DATA.open.taskForce.stalledDays) td.classList.add("stalled");
+    if (d >= DATA.open.taskForce.stalledDays) td.classList.add("stalled");
     td.title = `${TURN_WORDS[t.kind]} from ${t.reviewer}: ${t.story}`;
   } else if (t?.kind === "author") {
     td.append(el("span", "turn-author", "author"));

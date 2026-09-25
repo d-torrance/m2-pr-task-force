@@ -210,7 +210,7 @@ figure.chart .cap { color: var(--text-muted); font-size: 11px; margin: 14px 0 0;
 .hist .bar { position: relative; height: 14px; margin-right: 34px; }
 .hist .bar-fill { border-radius: 0 4px 4px 0; }
 /* The last band is the finding, not merely the biggest number: it earns the status hue, and
-   its own label says "31d+" so the meaning never rests on colour alone. */
+   its own label says "21d+" so the meaning never rests on colour alone. */
 .hist-row[data-stalled="true"] .bar-fill { background: var(--serious); }
 .hist-v {
   position: absolute; top: 50%; transform: translateY(-50%); margin-left: 8px;
@@ -300,7 +300,7 @@ export function render(data) {
     <div class="figs">
       <div class="fig"><div class="v num" id="tf-median">–</div><div class="k">median wait</div></div>
       <div class="fig"><div class="v num" id="tf-oldest">–</div><div class="k">longest wait</div></div>
-      <div class="fig flag"><div class="v num" id="tf-stalled">–</div><div class="k">waiting over <span id="tf-stalled-days">30</span> days</div></div>
+      <div class="fig flag"><div class="v num" id="tf-stalled">–</div><div class="k">waiting <span id="tf-stalled-days">21</span> days or more</div></div>
     </div>
     <figure class="chart">
       <figcaption>How long each PR has been waiting on a task force selection — since the request,
