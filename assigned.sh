@@ -66,13 +66,15 @@ if $summary; then
   # "Unanswered" is about whose move it is, and the move belongs to a side rather than to a
   # person: reviewers confer, and two of them who look at a PR together post once between
   # them, so one going quiet after a colleague reviewed is not a stall. A review that is in
-  # and unanswered is therefore the author's move whoever wrote it, and the wait is measured
-  # from the last thing the author did -- opening the PR, pushing, commenting, or reviewing
-  # their own PR.
+  # and unanswered is therefore the author's move whoever wrote it. Once the author answers --
+  # pushing, commenting, or reviewing their own PR -- the move is back with the reviewers, and
+  # the wait runs from that first answer. Later comments do not restart it, or an author
+  # pinging for news would make the wait look fresh; a later push does, since until it lands
+  # there may be nothing new to review.
   #
-  # The exception is an approval by somebody else, which asks the author for nothing: if this
-  # reviewer has not been back since one landed, their sign-off is what the PR is still
-  # waiting on, and the wait runs from that approval.
+  # An approval by somebody else asks the author for nothing, so it leaves the move where it
+  # was: if this reviewer has not been back since one landed, their sign-off is what the PR is
+  # still waiting on.
   #
   # An outstanding re-request is deliberately not a reason on its own. GitHub does not date a
   # request, so a stale one is indistinguishable from a fresh one, and the review side has
@@ -149,14 +151,22 @@ if $summary; then
             as $picked
         # Everything the author has done, review comments of their own included: the PR goes
         # back to them whenever one of these is the last thing that happened.
-        | ([ .createdAt,
-             (.commits.nodes[].commit.committedDate),
-             (.comments.nodes[] | select(.author.login == $pr.author.login) | .createdAt),
-             (.reviews.nodes[] | select(.author.login == $pr.author.login) | .submittedAt) ] | max) as $author_at
+        | [ .createdAt,
+            (.commits.nodes[].commit.committedDate),
+            (.comments.nodes[] | select(.author.login == $pr.author.login) | .createdAt),
+            (.reviews.nodes[] | select(.author.login == $pr.author.login) | .submittedAt) ] as $author_acts
+        | ($author_acts | max) as $author_at
+        # Opening the PR counts as its first push.
+        | ([.createdAt, (.commits.nodes[].commit.committedDate)] | max) as $last_push
         # The reason tells the task force story, so it names the last review by a task force
         # pick. A review from outside helps the PR, but it is not what the pick is following up.
-        | ([$reviews[] | select(.author.login as $who | any($picked[]; . == $who))] | last)
-            as $last_review
+        | [$reviews[] | select(.author.login as $who | any($picked[]; . == $who))] as $tf_reviews
+        | ($tf_reviews | last) as $last_review
+        # The pick review the author was asked to answer, and any pick approval that came after.
+        | ([$tf_reviews[] | select(.state != "APPROVED")] | last) as $tf_demand
+        | ([$tf_reviews[] | select(.state == "APPROVED"
+                                   and .submittedAt > ($tf_demand.submittedAt // ""))] | last)
+            as $tf_approval
         # A review that asks the author for something -- a comment, changes requested, a
         # dismissal. An approval is not one: it closes the reviewer out and leaves the author
         # with nothing to answer, so it never moves the ball off the review side.
@@ -169,24 +179,37 @@ if $summary; then
              # author owes the other a reply is not a stall.
              null
            else
-             # The ball is on the review side, and it landed there either when the author last
-             # acted or when the task force asked -- whichever came second. Never earlier than
-             # the ask: what a reviewer is late on starts the day they were picked.
-             ([$author_at, $pick.at] | max) as $since
+             # The ball is on the review side. It landed there when the author first answered the
+             # last review that asked for something, and it stays there however much the author
+             # comments afterwards -- a ping asking for news must not make the wait look fresh.
+             # A push is the exception: until the fix is in there is nothing new to review, and a
+             # quick "will do" in the thread is usually followed by one. Never earlier than the
+             # ask: what a reviewer is late on starts the day they were picked.
+             (if $last_demand == null then null
+              else [$author_acts[] | select(. > $last_demand.submittedAt)] | min end) as $answered
+             | ([$pick.at, $answered, $last_push] | max) as $since
+             # A push only earns a mention when it is what started the clock.
+             | (if $since == $last_push and $last_push > $pr.createdAt
+                then ", last pushed \($last_push | date)" else "" end) as $pushed
+             | ($tf_approval
+                | if . == null or .author.login == me then ""
+                  else ", \(.author.login) approved \(.submittedAt | date)" end) as $approved
              | { since: $since,
                  # Each reason ends with the ask that started the clock, so a reader can see
                  # why the count is what it is -- an old PR freshly picked is not an old wait.
-                 why: ((if $last_review == null then
-                         "no task force review yet, opened \($pr.createdAt | date)"
-                           + (if $author_at > $pr.createdAt then ", author last active \($author_at | date)" else "" end)
-                       elif $author_at > $last_review.submittedAt then
-                         "\($last_review.author.login) reviewed \($last_review.submittedAt | date),"
-                           + " author responded \($author_at | date), no review since"
-                       elif $last_review.state == "APPROVED" and $last_review.author.login != me then
-                         "\($last_review.author.login) approved \($last_review.submittedAt | date),"
-                           + " nothing from \(me) since"
+                 why: ((if $tf_demand != null and $author_at > $tf_demand.submittedAt then
+                         ([$author_acts[] | select(. > $tf_demand.submittedAt)] | min | date) as $responded
+                         | "\($tf_demand.author.login) reviewed \($tf_demand.submittedAt | date),"
+                           + " author responded \($responded)"
+                           + (if ($pushed | endswith($responded)) then "" else $pushed end)
+                           + $approved
+                           + (if $approved == "" then ", no review since" else ", nothing from \(me) since" end)
+                       elif $tf_demand == null and $approved != "" then
+                         $approved[2:] + ", nothing from \(me) since" + $pushed
+                       elif $last_review == null then
+                         "no task force review yet, opened \($pr.createdAt | date)" + $pushed
                        else
-                         "the last review predates the ask, nothing from \(me) since"
+                         "the last review predates the ask, nothing from \(me) since" + $pushed
                        end)
                    + "; picked \($pick.at | date)") }
            end) as $wait
