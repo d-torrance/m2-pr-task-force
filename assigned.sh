@@ -144,13 +144,19 @@ if $summary; then
                else del(.[$who]) end)) as $asked
         | ([($asked[me] // [])[] | select(.actor == assigner and .at >= start)] | first) as $pick
         | select($pick != null)
+        # Everybody the task force picked for this PR, this reviewer included.
+        | [$asked | to_entries[] | select(any(.value[]; .actor == assigner and .at >= start)) | .key]
+            as $picked
         # Everything the author has done, review comments of their own included: the PR goes
         # back to them whenever one of these is the last thing that happened.
         | ([ .createdAt,
              (.commits.nodes[].commit.committedDate),
              (.comments.nodes[] | select(.author.login == $pr.author.login) | .createdAt),
              (.reviews.nodes[] | select(.author.login == $pr.author.login) | .submittedAt) ] | max) as $author_at
-        | ($reviews | last) as $last_review
+        # The reason tells the task force story, so it names the last review by a task force
+        # pick. A review from outside helps the PR, but it is not what the pick is following up.
+        | ([$reviews[] | select(.author.login as $who | any($picked[]; . == $who))] | last)
+            as $last_review
         # A review that asks the author for something -- a comment, changes requested, a
         # dismissal. An approval is not one: it closes the reviewer out and leaves the author
         # with nothing to answer, so it never moves the ball off the review side.
@@ -171,7 +177,7 @@ if $summary; then
                  # Each reason ends with the ask that started the clock, so a reader can see
                  # why the count is what it is -- an old PR freshly picked is not an old wait.
                  why: ((if $last_review == null then
-                         "no review yet, opened \($pr.createdAt | date)"
+                         "no task force review yet, opened \($pr.createdAt | date)"
                            + (if $author_at > $pr.createdAt then ", author last active \($author_at | date)" else "" end)
                        elif $author_at > $last_review.submittedAt then
                          "\($last_review.author.login) reviewed \($last_review.submittedAt | date),"
