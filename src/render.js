@@ -121,8 +121,11 @@ tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transp
 .prnum:hover { text-decoration: underline; }
 .col-num { width: 1%; }
 .col-title { min-width: 260px; max-width: 420px; }
-.col-author, .col-age, .col-upd { white-space: nowrap; color: var(--text-secondary); }
-.col-age, .col-upd { width: 1%; }
+.col-author, .col-age, .col-upd, .col-wait { white-space: nowrap; color: var(--text-secondary); }
+.col-age, .col-upd, .col-wait { width: 1%; }
+/* Past the stalled line: the same status hue as the histogram's last band, which it counts. */
+.col-wait.stalled { color: var(--serious); font-weight: 620; }
+.turn-author { color: var(--text-muted); font-style: italic; }
 .col-labels { min-width: 150px; }
 .col-revs { min-width: 220px; }
 
@@ -180,7 +183,7 @@ tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transp
 .legend .sw-1 { background: var(--stage-1); }
 .legend .sw-2 { background: var(--stage-2); }
 #w-table td { border-bottom: 1px solid var(--grid); }
-#w-table th:not(:first-child), #w-table td:not(:first-child) { width: 22%; }
+#w-table th:not(:first-child), #w-table td:not(:first-child) { width: 18%; }
 #a-table td { border-bottom: 1px solid var(--grid); }
 #a-table th:not(:first-child), #a-table td:not(:first-child) { width: 28%; }
 
@@ -281,7 +284,7 @@ export function render(data) {
       <div class="v num" id="kpi-prs">–</div>
       <div class="k">open PRs up for review <span class="k2" id="kpi-prs-note"></span></div>
     </div>
-    <div class="kpi"><div class="v num" id="kpi-mine">–</div><div class="k">awaiting review — assigned by <span class="who">…</span></div></div>
+    <div class="kpi"><div class="v num" id="kpi-mine">–</div><div class="k">waiting on a task force selection <span class="k2">a first review or a follow-up</span></div></div>
     <div class="kpi flag">
       <div class="v num" id="kpi-untriaged">–</div>
       <div class="k">opened since <span id="kpi-untriaged-since">…</span> with no reviewer from
@@ -291,16 +294,17 @@ export function render(data) {
 
   <section>
     <div class="head">
-      <h2>Task force requests awaiting review</h2>
+      <h2>Waiting on a task force selection</h2>
       <span class="note" id="tf-open-note"></span>
     </div>
     <div class="figs">
-      <div class="fig"><div class="v num" id="tf-median">–</div><div class="k">median wait since the request</div></div>
-      <div class="fig"><div class="v num" id="tf-oldest">–</div><div class="k">longest a request has gone unanswered</div></div>
+      <div class="fig"><div class="v num" id="tf-median">–</div><div class="k">median wait</div></div>
+      <div class="fig"><div class="v num" id="tf-oldest">–</div><div class="k">longest wait</div></div>
       <div class="fig flag"><div class="v num" id="tf-stalled">–</div><div class="k">waiting over <span id="tf-stalled-days">30</span> days</div></div>
     </div>
     <figure class="chart">
-      <figcaption>How long the unanswered requests have been waiting</figcaption>
+      <figcaption>How long each PR has been waiting on a task force selection — since the request,
+        or since the author last answered a review, whichever came later</figcaption>
       <div class="hist" id="tf-hist"></div>
       <p class="cap" id="tf-ceiling"></p>
     </figure>
@@ -320,6 +324,8 @@ export function render(data) {
         <option value="all">Any assignment</option>
         <option value="mine">Has a task force selection</option>
         <option value="notmine">No task force selection</option>
+        <option value="tf-waiting">Waiting on a task force selection</option>
+        <option value="tf-author">Task force PR waiting on the author</option>
         <option value="started">Review begun, not approved</option>
         <option value="nohook">Nobody on the hook</option>
         <option value="unassigned">No reviewer at all</option>
@@ -334,6 +340,7 @@ export function render(data) {
           <th data-sort="author">Author</th>
           <th data-sort="labels">Labels</th>
           <th data-sort="reviewers">Reviewers</th>
+          <th data-sort="wait" title="Days a task force selection has owed a review">Waiting</th>
           <th data-sort="age">Opened</th>
           <th data-sort="tail">Updated</th>
         </tr></thead>
@@ -349,7 +356,7 @@ export function render(data) {
       <span class="note">task force selections each reviewer still owes something on</span>
       <span class="legend">
         <span><span class="sw sw-1"></span>awaiting a first review</span>
-        <span><span class="sw sw-2"></span>reviewed, not approved</span>
+        <span><span class="sw sw-2"></span>owed a follow-up</span>
       </span>
     </div>
     <div class="scroll">
@@ -358,7 +365,8 @@ export function render(data) {
           <th data-wsort="reviewer">Reviewer</th>
           <th data-wsort="total">Total</th>
           <th data-wsort="waiting">Awaiting first review</th>
-          <th data-wsort="started">Review begun</th>
+          <th data-wsort="followup">Follow-up owed</th>
+          <th data-wsort="author">Waiting on author</th>
         </tr></thead>
         <tbody id="w-body"></tbody>
       </table>
@@ -368,10 +376,8 @@ export function render(data) {
 
 <div id="panel-merged" role="tabpanel" hidden>
   <div class="kpis">
-    <div class="kpi"><div class="v num" id="kpi-merged">–</div><div class="k">merged in the last <span class="months">3</span> months <span class="k2">since <span id="merged-since"></span></span></div></div>
-    <div class="kpi"><div class="v num" id="kpi-approved">–</div><div class="k">merged with an approval</div></div>
-    <div class="kpi"><div class="v num" id="kpi-unapproved">–</div><div class="k">merged with no approval</div></div>
-    <div class="kpi"><div class="v num" id="kpi-taskforce">–</div><div class="k">approved by a task force selection</div></div>
+    <div class="kpi"><div class="v num" id="kpi-tf-recent">–</div><div class="k">merged with a task force approval in the last <span id="kpi-tf-recent-days">30</span> days <span class="k2">since <span id="kpi-tf-recent-since"></span></span></div></div>
+    <div class="kpi"><div class="v num" id="kpi-tf-window">–</div><div class="k">merged with a task force approval in the last <span class="months">3</span> months <span class="k2">since <span id="merged-since"></span></span></div></div>
   </div>
 
   <section>

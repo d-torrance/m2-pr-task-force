@@ -21,7 +21,7 @@ const appr = (d, login) => d.merged.approvals.find((a) => a.login === login);
 
 test("an unlabelled draft is excluded", () => {
   assert.equal(pr(900), undefined);
-  assert.equal(data.open.stats.prs, 8);
+  assert.equal(data.open.stats.prs, 9);
 });
 
 test("a JSAG draft is listed -- policy opens them as drafts, but they want review", () => {
@@ -43,7 +43,7 @@ test("the JSAG label matches whatever its casing", () => {
 test("PRs are listed newest first", () => {
   assert.deepEqual(
     data.open.prs.map((p) => p.number),
-    [107, 106, 105, 104, 103, 102, 101, 100],
+    [108, 107, 106, 105, 104, 103, 102, 101, 100],
   );
 });
 
@@ -113,13 +113,16 @@ test("teams are carried by name and do count as assignments", () => {
   assert.equal(who("reviewers-team").waiting, 1);
 });
 
-test("workload splits what a pick owes into not-yet-reviewed and not-yet-approved", () => {
-  // alice has yet to look at #100, #101 and #103 -- including #103, where she left
-  // CHANGES_REQUESTED and was then re-requested, so she owes another look.
-  assert.deepEqual(who("alice"), { login: "alice", waiting: 3, started: 0, total: 3 });
-  // bob is the case GitHub's own view loses: on #107 he commented without approving, which
-  // deleted his request but not his part in the PR.
-  assert.deepEqual(who("bob"), { login: "bob", waiting: 0, started: 1, total: 1 });
+test("workload splits what a pick owes by whose turn it is", () => {
+  // alice has yet to look at #100 and #101. On #103 she asked for changes, the author answered,
+  // and she was re-requested: she owes a follow-up, not a first look.
+  assert.deepEqual(who("alice"), { login: "alice", waiting: 2, followup: 1, author: 0, total: 3 });
+  // bob commented on #107 and the author has not answered. He keeps his row -- GitHub deleted
+  // his request, but not his part in the PR -- and the PR counts as the author's, not his.
+  assert.deepEqual(who("bob"), { login: "bob", waiting: 0, followup: 0, author: 1, total: 0 });
+  // Another pick's approval does not answer for gina: she asked for changes on #108 herself.
+  assert.deepEqual(who("gina"), { login: "gina", waiting: 0, followup: 1, author: 0, total: 1 });
+  assert.equal(who("hank").total, 0);
 });
 
 test("the table is the task force's own queue -- other people's requests are not in it", () => {
@@ -136,7 +139,7 @@ test("the table is the task force's own queue -- other people's requests are not
 test("a pick who has answered everything reads as zero -- present, and free", () => {
   // frank approved #102, so he owes nothing. He keeps his row: that is what capacity looks
   // like, and dropping him would hide the person most available to ask.
-  assert.deepEqual(who("frank"), { login: "frank", waiting: 0, started: 0, total: 0 });
+  assert.deepEqual(who("frank"), { login: "frank", waiting: 0, followup: 0, author: 0, total: 0 });
 });
 
 test("the gap numbers measure different things", () => {
@@ -146,8 +149,8 @@ test("the gap numbers measure different things", () => {
   assert.equal(s.noOneOnHook, 2);
   assert.equal(s.unassigned, 1);
   // #107 is the one this used to get wrong: bob commented without approving, which deleted
-  // his request, and the PR then read as one nobody was handling.
-  assert.equal(s.inProgress, 1);
+  // his request, and the PR then read as one nobody was handling. #108 is the same.
+  assert.equal(s.inProgress, 2);
 });
 
 test("a review underway does not count as awaiting a first look", () => {
@@ -231,10 +234,14 @@ test("the task force stat counts merged PRs, not approvals", () => {
   assert.equal(cut.merged.stats.taskForce, 1); // only #200 once May is excluded
 });
 
-test("a merged PR with no approval is counted as such", () => {
+test("task force merges are also counted over the last 30 days", () => {
+  // The snapshot is 2026-07-15, so the window opens 2026-06-15: #200 (merged 07-09) is in it,
+  // #201 (merged in May) is not.
+  assert.equal(data.merged.stats.taskForceRecent, 1);
+  assert.equal(data.merged.stats.recentDays, 30);
+  assert.equal(data.merged.stats.recentSince, "2026-06-15");
+  assert.equal(cut.merged.stats.taskForceRecent, 1);
   assert.equal(data.merged.stats.prs, 4);
-  assert.equal(data.merged.stats.approved, 2);
-  assert.equal(data.merged.stats.unapproved, 2); // #202 (no reviews) and #203 (only a comment)
 });
 
 test("a request still outstanding when the PR merged means they never reviewed it", () => {
@@ -247,20 +254,75 @@ test("reviewers who only commented are listed with zero approvals, not dropped",
 
 /* -------------------------------- wait times --------------------------------- */
 
-test("a PR's wait runs from its oldest outstanding pick, measured against the snapshot", () => {
+test("a PR's wait covers first looks and follow-ups, and splits the picked PRs by whose turn", () => {
   const tf = data.open.taskForce;
-  assert.equal(tf.waiting, 5);
-  // #101's request (2026-06-04) is the oldest still unanswered, 41 days before generatedAt.
+  assert.equal(tf.waiting, 6);
+  assert.equal(tf.firstLook, 4); // #100, #101, #104, #106
+  assert.equal(tf.followup, 2); // #103, #108
+  assert.equal(tf.onAuthor, 1); // #107
+  assert.equal(tf.done, 1); // #102
+  assert.equal(tf.prs, tf.waiting + tf.onAuthor + tf.done);
+  // #101's request (2026-06-04) is the oldest, 41 days before generatedAt.
   assert.equal(tf.oldestDays, 41);
-  assert.equal(tf.medianDays, 24); // waits of 11, 13, 24, 34 and 41 days
-  assert.equal(tf.prs, tf.waiting + tf.answered);
+  assert.equal(tf.medianDays, 11); // waits of 5.5, 10, 11, 11, 24 and 41 days
+  assert.equal(data.open.stats.waitingMine, tf.waiting);
+});
+
+test("the wait runs from the author's first answer, and a later ping does not restart it", () => {
+  // #100: carol commented on 07-09 and the author answered at noon; the 07-12 ping changes nothing.
+  assert.equal(pr(100).taskForce.since, "2026-07-09T12:00:00Z");
+  assert.equal(pr(100).taskForce.kind, "first");
+  // The story is told in the order it happened: opened before picked.
+  assert.equal(rev(100, "alice").story, "opened 2026-07-01, picked 2026-07-02, no task force review since");
+});
+
+test("a push after the answer restarts the wait, and the story says so", () => {
+  const alice = rev(103, "alice");
+  assert.equal(alice.turn, "followup");
+  assert.equal(alice.turnSince, "2026-07-05T00:00:00Z");
+  assert.equal(
+    alice.story,
+    "picked 2026-06-11, alice reviewed 2026-07-01, author responded 2026-07-02, last pushed 2026-07-05, no review since",
+  );
+});
+
+test("another pick's approval is in the story, and does not let the other pick off", () => {
+  const gina = rev(108, "gina");
+  assert.equal(gina.turn, "followup");
+  // The author's review of their own PR is their answer.
+  assert.equal(gina.turnSince, "2026-07-04T00:00:00Z");
+  assert.equal(
+    gina.story,
+    "picked 2026-07-02, gina reviewed 2026-07-03, author responded 2026-07-04, hank approved 2026-07-10, nothing from gina since",
+  );
+  assert.equal(rev(108, "hank").turn, undefined); // approved: owes nothing
+});
+
+test("an unanswered review is the author's turn, whoever wrote it", () => {
+  assert.equal(pr(107).taskForce.kind, "author");
+  assert.equal(rev(107, "bob").story, "picked 2026-07-08, bob reviewed 2026-07-13, author has not responded");
+});
+
+test("a bot review does not hand the PR to the author", () => {
+  assert.equal(pr(104).taskForce.kind, "first");
+  assert.equal(pr(104).taskForce.since, "2026-06-21T00:00:00Z");
+});
+
+test("a PR missing from the second fetch still gets a turn from what the first one has", () => {
+  assert.equal(raw.activity[101], undefined);
+  assert.equal(pr(101).taskForce.kind, "first");
+  assert.equal(pr(101).taskForce.since, "2026-06-04T00:00:00Z");
+});
+
+test("a PR with no task force pick has no turn", () => {
+  assert.equal(pr(105).taskForce, null);
 });
 
 test("the age bands partition the waiting queue, and the last band is the stalled count", () => {
   const tf = data.open.taskForce;
   assert.deepEqual(
     tf.bands.map((b) => b.n),
-    [0, 2, 1, 2],
+    [1, 3, 1, 1],
   );
   assert.equal(tf.bands.reduce((n, b) => n + b.n, 0), tf.waiting);
   // Exactly one band is flagged, and it is the >30d one the stalled figure counts.
@@ -270,7 +332,7 @@ test("the age bands partition the waiting queue, and the last band is the stalle
 test("the cutoff pulls waits out of the task force queue, as it does everything else", () => {
   // #101 and #103 were requested before the task force began, so their long waits are
   // somebody else's history -- not a queue this effort is sitting on.
-  assert.equal(cut.open.taskForce.waiting, 2);
+  assert.equal(cut.open.taskForce.waiting, 3); // #100, #106, #108
   assert.equal(cut.open.taskForce.stalled, 0);
 });
 
@@ -305,11 +367,11 @@ test("submittedAt is null while pending, even for someone who reviewed an earlie
 
 test("response rate is request-level, and the two tabs sum to the whole", () => {
   const rq = data.taskForce.requests;
-  assert.equal(rq.total, 10);
-  assert.equal(rq.answered, 4);
+  assert.equal(rq.total, 12);
+  assert.equal(rq.answered, 6);
   assert.equal(rq.open.total + rq.merged.total, rq.total);
   assert.equal(rq.open.answered + rq.merged.answered, rq.answered);
-  assert.equal(rq.medianResponseDays, 5); // answers came in 5, 5, 5 and 17 days
+  assert.equal(rq.medianResponseDays, 5); // answers came in 1, 5, 5, 5, 8 and 17 days
 });
 
 test("a review stamped before its own request contributes no response time", () => {
@@ -318,8 +380,8 @@ test("a review stamped before its own request contributes no response time", () 
     "2026-01-01T00:00:00Z";
   const d = reconcile({ ...backwards, since: "2026-04-15", months: 3 }, opts);
   // Still an answered request -- they did review -- but not a negative latency.
-  assert.equal(d.taskForce.requests.answered, 4);
-  assert.equal(d.taskForce.requests.responded, 3);
+  assert.equal(d.taskForce.requests.answered, 6);
+  assert.equal(d.taskForce.requests.responded, 5);
   assert.equal(d.taskForce.requests.medianResponseDays, 5);
 });
 

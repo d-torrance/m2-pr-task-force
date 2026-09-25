@@ -3,8 +3,8 @@
 // does no fetching, so the output opens straight from disk with no server.
 
 import { mkdir, writeFile } from "node:fs/promises";
-import { fetchMergedPullRequests, fetchOpenPullRequests, resolveToken } from "./src/query.js";
-import { reconcile } from "./src/reconcile.js";
+import { fetchActivity, fetchMergedPullRequests, fetchOpenPullRequests, resolveToken } from "./src/query.js";
+import { pickedNumbers, reconcile } from "./src/reconcile.js";
 import { render } from "./src/render.js";
 
 const OWNER = process.env.TASK_FORCE_OWNER || "Macaulay2";
@@ -27,16 +27,22 @@ const repo = `${OWNER}/${NAME}`;
 const token = resolveToken();
 
 console.log(`Fetching ${repo}…`);
-const [open, merged] = await Promise.all([
-  fetchOpenPullRequests({ owner: OWNER, name: NAME, token }),
-  fetchMergedPullRequests({ owner: OWNER, name: NAME, token, since }),
+// Author activity is only needed for PRs the task force has a pick on, and which those are
+// takes the open PRs to tell -- so it waits on them, while the merged fetch runs alongside.
+const mergedP = fetchMergedPullRequests({ owner: OWNER, name: NAME, token, since });
+const open = await fetchOpenPullRequests({ owner: OWNER, name: NAME, token });
+const numbers = pickedNumbers(open, { me: ME, start: START });
+const [activity, merged] = await Promise.all([
+  fetchActivity({ owner: OWNER, name: NAME, token, numbers }),
+  mergedP,
 ]);
 
-const data = reconcile({ open, merged, since, months: MONTHS }, { me: ME, repo, start: START });
+const data = reconcile({ open, merged, activity, since, months: MONTHS }, { me: ME, repo, start: START });
 
 const o = data.open.stats;
 console.log(`\nopen:`);
 console.log(`  ${open.length} open — ${o.prs} up for review (${o.drafts} ${o.draftLabel} draft), ${open.length - o.prs} other draft skipped`);
+console.log(`  ${numbers.length} with a task force pick, fetched for author activity`);
 console.log(`  ${o.pending} PRs awaiting review — ${o.pendingMine} with a task force pick (by ${ME} since ${START}), ${o.pending - o.pendingMine} assigned only by others`);
 console.log(`  ${o.inProgress} with a review underway but no approval, ${o.noOneOnHook} with nobody on them at all`);
 console.log(`  ${o.untriaged} opened since ${START} with no reviewer from ${ME} (${o.untriagedNoReviewer} with no reviewer at all)`);
@@ -45,14 +51,14 @@ console.log(`  ${data.open.workload.length} reviewers`);
 const t = data.open.taskForce;
 const rq = data.taskForce.requests;
 console.log(`\ntask force waits (${data.taskForce.ageDays} days in):`);
-console.log(`  ${t.waiting} of ${t.prs} picked PRs still unanswered — median ${t.medianDays}d, oldest ${t.oldestDays}d`);
+console.log(`  ${t.waiting} of ${t.prs} picked PRs waiting on a pick (${t.firstLook} first look, ${t.followup} follow-up) — median ${t.medianDays}d, oldest ${t.oldestDays}d`);
+console.log(`  ${t.onAuthor} waiting on the author, ${t.done} approved by every pick`);
 console.log(`  ${t.stalled} waiting over ${t.stalledDays} days — bands ${t.bands.map((x) => `${x.label}:${x.n}`).join(" ")}`);
 console.log(`  ${rq.answered}/${rq.total} requests answered — median ${rq.medianResponseDays}d to a review when one came`);
 
 const m = data.merged.stats;
 console.log(`\nmerged since ${since} (${MONTHS} months):`);
-console.log(`  ${m.prs} merged — ${m.approved} carried an approval, ${m.unapproved} none`);
-console.log(`  ${m.taskForce} merged with an approval from a task force pick`);
+console.log(`  ${m.prs} merged — ${m.taskForce} with an approval from a task force pick, ${m.taskForceRecent} of them in the last ${m.recentDays} days`);
 console.log(`  ${data.merged.approvals.length} reviewers`);
 
 const mt = data.merged.taskForce;

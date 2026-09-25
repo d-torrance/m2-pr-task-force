@@ -474,6 +474,70 @@
           }
         ]
       }
+    },
+    {
+      "comment": "Two picks. gina asked for changes, the author answered in the review thread, then hank approved. gina still owes the follow-up: another pick's approval does not answer for her.",
+      "number": 108,
+      "title": "Two picks, one approved",
+      "url": "https://example.invalid/108",
+      "isDraft": false,
+      "createdAt": "2026-07-01T00:00:00Z",
+      "updatedAt": "2026-07-10T00:00:00Z",
+      "author": {
+        "login": "contributor"
+      },
+      "labels": {
+        "nodes": []
+      },
+      "reviewRequests": {
+        "nodes": []
+      },
+      "latestReviews": {
+        "nodes": [
+          {
+            "state": "CHANGES_REQUESTED",
+            "submittedAt": "2026-07-03T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "gina"
+            }
+          },
+          {
+            "state": "APPROVED",
+            "submittedAt": "2026-07-10T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "hank"
+            }
+          }
+        ]
+      },
+      "timelineItems": {
+        "nodes": [
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-07-02T00:00:00Z",
+            "actor": {
+              "login": "me"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "gina"
+            }
+          },
+          {
+            "__typename": "ReviewRequestedEvent",
+            "createdAt": "2026-07-02T00:00:00Z",
+            "actor": {
+              "login": "me"
+            },
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "hank"
+            }
+          }
+        ]
+      }
     }
   ],
   "merged": [
@@ -647,5 +711,221 @@
         ]
       }
     }
-  ]
+  ],
+  "activity": {
+    "100": {
+      "comment": "carol's comment asked the author for something; they answered the same day, then pinged on 07-12. The ping must not restart alice's wait.",
+      "commits": {
+        "nodes": [
+          {
+            "commit": {
+              "committedDate": "2026-07-01T00:00:00Z"
+            }
+          }
+        ]
+      },
+      "comments": {
+        "nodes": [
+          {
+            "author": {
+              "login": "contributor"
+            },
+            "createdAt": "2026-07-09T12:00:00Z"
+          },
+          {
+            "author": {
+              "login": "contributor"
+            },
+            "createdAt": "2026-07-12T00:00:00Z"
+          },
+          {
+            "author": {
+              "login": "carol"
+            },
+            "createdAt": "2026-07-09T00:00:00Z"
+          }
+        ]
+      },
+      "reviews": {
+        "nodes": [
+          {
+            "state": "COMMENTED",
+            "submittedAt": "2026-07-09T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "carol"
+            }
+          }
+        ]
+      }
+    },
+    "102": {
+      "comment": "Both approved; nothing is owed.",
+      "commits": {
+        "nodes": []
+      },
+      "comments": {
+        "nodes": []
+      },
+      "reviews": {
+        "nodes": [
+          {
+            "state": "APPROVED",
+            "submittedAt": "2026-07-06T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "frank"
+            }
+          },
+          {
+            "state": "APPROVED",
+            "submittedAt": "2026-07-12T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "dave"
+            }
+          }
+        ]
+      }
+    },
+    "103": {
+      "comment": "alice asked for changes; the author answered on 07-02 and pushed the fix on 07-05. The push restarts the clock, the 07-13 ping does not.",
+      "commits": {
+        "nodes": [
+          {
+            "commit": {
+              "committedDate": "2026-07-05T00:00:00Z"
+            }
+          }
+        ]
+      },
+      "comments": {
+        "nodes": [
+          {
+            "author": {
+              "login": "contributor"
+            },
+            "createdAt": "2026-07-02T00:00:00Z"
+          },
+          {
+            "author": {
+              "login": "contributor"
+            },
+            "createdAt": "2026-07-13T00:00:00Z"
+          }
+        ]
+      },
+      "reviews": {
+        "nodes": [
+          {
+            "state": "CHANGES_REQUESTED",
+            "submittedAt": "2026-07-01T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "alice"
+            }
+          }
+        ]
+      }
+    },
+    "104": {
+      "comment": "Only a bot has reviewed. It asks for nothing a reviewer is waiting on, so the team still owes the first look.",
+      "commits": {
+        "nodes": []
+      },
+      "comments": {
+        "nodes": []
+      },
+      "reviews": {
+        "nodes": [
+          {
+            "state": "COMMENTED",
+            "submittedAt": "2026-07-14T00:00:00Z",
+            "author": {
+              "__typename": "Bot",
+              "login": "copilot-pull-request-reviewer"
+            }
+          }
+        ]
+      }
+    },
+    "106": {
+      "comment": "Nothing since the pick.",
+      "commits": {
+        "nodes": []
+      },
+      "comments": {
+        "nodes": []
+      },
+      "reviews": {
+        "nodes": []
+      }
+    },
+    "107": {
+      "comment": "bob commented on 07-13 and the author has not answered: the author's turn. Their 07-10 comment came before the review, so it answers nothing.",
+      "commits": {
+        "nodes": []
+      },
+      "comments": {
+        "nodes": [
+          {
+            "author": {
+              "login": "contributor"
+            },
+            "createdAt": "2026-07-10T00:00:00Z"
+          }
+        ]
+      },
+      "reviews": {
+        "nodes": [
+          {
+            "state": "COMMENTED",
+            "submittedAt": "2026-07-13T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "bob"
+            }
+          }
+        ]
+      }
+    },
+    "108": {
+      "comment": "The author's reply is a review of their own PR, in gina's thread.",
+      "commits": {
+        "nodes": []
+      },
+      "comments": {
+        "nodes": []
+      },
+      "reviews": {
+        "nodes": [
+          {
+            "state": "CHANGES_REQUESTED",
+            "submittedAt": "2026-07-03T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "gina"
+            }
+          },
+          {
+            "state": "COMMENTED",
+            "submittedAt": "2026-07-04T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "contributor"
+            }
+          },
+          {
+            "state": "APPROVED",
+            "submittedAt": "2026-07-10T00:00:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "hank"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "activityComment": "The second fetch, keyed by PR number. #101 is deliberately absent, to exercise the fallback."
 }

@@ -6,7 +6,8 @@ A dashboard of pull requests on [Macaulay2/M2][m2] — who wrote them, what they
 - **Open** — every open PR that is up for review, plus a reviewer workload table for spreading
   review load. That means all non-drafts, and drafts labelled `JSAG` — those are opened as drafts
   by policy but are still meant to be reviewed. Other drafts are left out.
-- **Merged** — everything merged in the last 3 months, plus how many each reviewer approved.
+- **Merged** — everything merged in the last 3 months, led by how many merged with a task force
+  approval in the last 30 days and in the full window, plus how many each reviewer approved.
 
 Published daily to GitHub Pages. Run `npm start` any time to regenerate it locally.
 
@@ -45,22 +46,27 @@ most readers aren't.
 ## The workload table
 
 The task force's own queue, and only that: one row per reviewer it has put on an open PR —
-exactly the pairs the PR table sets in **bold**. Two columns, because a reviewer owes something
-in two distinct states:
+exactly the pairs the PR table sets in **bold**. The columns are read off [whose turn it
+is](#whose-turn-it-is):
 
 | Column | Meaning |
 |---|---|
-| **awaiting first review** | assigned, and has not reviewed yet |
-| **review begun** | reviewed, but not approved — a comment, changes requested, or an approval since dismissed |
+| **awaiting first review** | their move, and they have not reviewed since being picked |
+| **follow-up owed** | their move, and they have reviewed before: the author has answered since, or re-requested them |
+| **waiting on author** | the author owes a reply to a review, so there is nothing to ask this reviewer yet |
 
-The bar under **Total** splits at the same two stages, in one hue at two steps rather than two
+**Total** is the first two. The third sits beside it rather than in it: it used to be folded,
+with the second, into a single "reviewed, not approved" column, which ranked a reviewer the author
+owed three replies alongside one sitting on three answers — opposite answers to "who to ask next".
+
+The bar under **Total** splits at its two stages, in one hue at two steps rather than two
 different colors: these are stages of one review, not two unrelated things, so the order should
 be visible in the color. The numbers stay in the columns beside it, so the split never rests on
 color alone.
 
 Only the first of those exists in GitHub's own view, and counting it alone — as this table used
 to — reports the task force's most engaged picks as carrying **nothing**: the moment they
-comment their request is deleted, while the PR still waits on their approval. The sum is what
+comment their request is deleted, while the PR still waits on their approval. **Total** is what
 the table sorts on, since it is the number that answers "who to ask next".
 
 Requests the task force did not make are left out, and so are the people who only ever appear
@@ -93,9 +99,39 @@ three ways, and the middle group is the one worth naming:
 as zero: the review that removed the request is invisible to a request count. That put **13 of
 M2's 21** supposedly untended PRs in a pile where somebody was already mid-review.
 
+## Whose turn it is
+
+For each task force pick on an open PR, the build works out whose move it is, since when, and how
+it got there. The rules are the ones `assigned.sh --summary` uses, where they were worked out:
+
+- **The move belongs to a side, not a person.** Any review that asks the author for something —
+  anything but an approval — and that the author has not answered puts the PR on the author's
+  side, whoever wrote it. Reviewers confer, so one going quiet while the author owes another a
+  reply is not a stall. Bot reviews do not count.
+- **The wait runs from the author's first answer.** Once the author answers — a comment, a push,
+  or a reply in the review thread — the PR is back with the reviewers. Later comments do not
+  restart the clock, or an author pinging for news would make the wait look fresh; a later push
+  does, since until the fix is in there may be nothing new to review. Never earlier than the
+  pick: what a reviewer is late on starts the day they were asked.
+- **A re-request is a follow-up, not a first look.** GitHub lists a re-requested reviewer as
+  pending, exactly like one never asked. The PR table marks them *re-requested*.
+
+The PR table's **Waiting** column shows the result, with the story in its tooltip ("picked
+2026-07-06, ggsmith reviewed 2026-07-24, author responded 2026-07-24, last pushed 2026-07-28, no
+review since"). It replaces nothing: **Updated** is still there, but it moves with any activity at
+all — a ping, a label, a bot — so it is no guide to what is stalled.
+
+This needs what the author did, which the main query does not fetch: comments, the last commit,
+and every review round (`latestReviews` keeps one per person). So the build fetches it
+separately, and only for open PRs with a task force pick — a fraction of the queue — batched by
+number. Comments and reviews past the first 100 are not fetched; that can only make a wait read
+shorter.
+
 ## How long things take
 
-Both tabs carry timing stats, scoped to the task force's own requests. Three deliberate choices:
+Both tabs carry timing stats, scoped to the task force's own requests. The open tab's are waits
+on a pick, first looks and follow-ups alike, measured as in [whose turn it is](#whose-turn-it-is).
+Three deliberate choices:
 
 - **Median, never mean.** The waits are severely right-skewed — a request from this morning
   shares the queue with one from 2024 — and a mean would describe no actual PR.
@@ -163,8 +199,8 @@ generation time and flags a snapshot older than two days.
 | Path | |
 |---|---|
 | `build.js` | fetch → reconcile → render |
-| `src/query.js` | GraphQL document, pagination, token resolution |
-| `src/reconcile.js` | timeline replay, origins, workload, wait times |
+| `src/query.js` | GraphQL documents, pagination, the author-activity fetch, token resolution |
+| `src/reconcile.js` | timeline replay, origins, whose turn it is, workload, wait times |
 | `src/render.js` | HTML + CSS shell |
 | `src/page.js` | client-side sort/filter, inlined into the page |
 | `test/` | attribution and timing tests over a synthetic fixture |

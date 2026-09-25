@@ -110,11 +110,13 @@ function reviewersFor(pr, me, start) {
  * open PR. These are exactly the (PR, reviewer) pairs the PR table sets in bold, so the table
  * and the rows agree about who the task force has asked for what.
  *
- * Two states, because a reviewer owes something in two different ways:
- *   waiting - assigned and has not reviewed yet: the first look is still outstanding
- *   started - reviewed, but not approved (a comment, changes requested, or an approval since
- *             dismissed): the review is underway and the PR still needs their sign-off
- * `total` is the sum, i.e. how many of the task force's PRs this person is on the hook for.
+ * Three states, read off whose turn it is (see turnOf):
+ *   waiting  - their move, and they have not reviewed since they were picked: a first look
+ *   followup - their move, and they have reviewed before: the author has answered since
+ *   author   - the author owes a reply to a review, so there is nothing to ask this person yet
+ * `total` counts only the first two, i.e. how many of the task force's PRs are waiting on this
+ * person right now. Lumping the third in, as a single "reviewed, not approved" column once did,
+ * ranked a reviewer the author owed three replies alongside one sitting on three answers.
  *
  * Only `waiting` survives in GitHub's own view of things, because it deletes the request as
  * soon as a review is submitted. Counting that alone -- as this table once did -- reported the
@@ -130,7 +132,7 @@ function reviewersFor(pr, me, start) {
 function workloadFrom(prs) {
   const byLogin = new Map();
   const seen = (login) => {
-    if (!byLogin.has(login)) byLogin.set(login, { login, waiting: 0, started: 0, total: 0 });
+    if (!byLogin.has(login)) byLogin.set(login, { login, waiting: 0, followup: 0, author: 0, total: 0 });
     return byLogin.get(login);
   };
 
@@ -140,12 +142,13 @@ function workloadFrom(prs) {
       // A pick whose every review is in gets a row at zero rather than none at all: that is
       // precisely "has capacity", which is the question this table exists to answer.
       const row = seen(r.login);
-      if (r.state === "PENDING") row.waiting += 1;
-      else if (r.state !== "APPROVED") row.started += 1;
+      if (r.turn === "first") row.waiting += 1;
+      else if (r.turn === "followup") row.followup += 1;
+      else if (r.turn === "author") row.author += 1;
     }
   }
 
-  for (const row of byLogin.values()) row.total = row.waiting + row.started;
+  for (const row of byLogin.values()) row.total = row.waiting + row.followup;
 
   return [...byLogin.values()].sort(
     (a, b) => b.total - a.total || b.waiting - a.waiting || a.login.localeCompare(b.login),
@@ -215,25 +218,26 @@ const bandsOf = (values) =>
   }));
 
 /**
- * The task force's own queue on open PRs: how long its picks have been left unanswered.
+ * The task force's own queue on open PRs: how long PRs have been waiting on its picks.
  *
- * Counted per PR, matching the KPI row above it -- a PR with two pending picks is one PR
- * waiting -- and measured from the OLDEST outstanding pick, which is how long the PR itself
- * has been sitting on a request nobody answered.
+ * Counted per PR, matching the KPI row above it -- a PR with two picks owing a look is one PR
+ * waiting -- and measured from the longest-waiting pick (see withTurns). A follow-up counts as
+ * much as a first look: a pick who reviewed once and went quiet after the author answered is
+ * the same stall, and counting only outstanding requests hid every one of them.
  */
 function openTaskForce(prs, now) {
-  const picked = prs.filter((pr) => pr.reviewers.some((r) => r.origin === "mine"));
-  const waits = [];
-  for (const pr of picked) {
-    const asked = pr.reviewers
-      .filter((r) => r.origin === "mine" && r.state === "PENDING" && r.assignedAt)
-      .map((r) => r.assignedAt);
-    if (asked.length) waits.push(round1(daysBetween(earliest(asked), now)));
-  }
+  const picked = prs.filter((pr) => pr.taskForce);
+  const kind = (k) => picked.filter((pr) => pr.taskForce.kind === k).length;
+  const waits = picked
+    .filter((pr) => pr.taskForce.kind === "first" || pr.taskForce.kind === "followup")
+    .map((pr) => round1(daysBetween(pr.taskForce.since, now)));
   return {
     prs: picked.length,
     waiting: waits.length,
-    answered: picked.length - waits.length,
+    firstLook: kind("first"),
+    followup: kind("followup"),
+    onAuthor: kind("author"),
+    done: kind("done"),
     medianDays: median(waits),
     oldestDays: waits.length ? Math.max(...waits) : null,
     stalled: waits.filter((w) => w > STALLED_DAYS).length,
@@ -302,6 +306,153 @@ function taskForceRequests(openPrs, mergedPrs) {
   };
 }
 
+/* ------------------------------- whose turn ---------------------------------- */
+
+// ISO timestamps compare correctly as strings. Nulls are skipped, so a missing time never wins.
+const latest = (times) => times.filter(Boolean).reduce((a, b) => (a > b ? a : b), null);
+const day = (iso) => iso.slice(0, 10);
+
+/**
+ * What a PR's author has done, and every review from anybody else, oldest first. `act` is
+ * the second fetch (query.js fetchActivity): comments, the last commit, and every review
+ * round, which `latestReviews` collapses to one per person. Without it this falls back to
+ * what the first fetch has -- enough to run, but blind to anything the author did.
+ *
+ * Bot reviews are left out: a bot asking the author for something is not a reviewer handing
+ * the PR back, and counting it would park every PR Copilot touched on the author's side.
+ */
+function activityOf(pr, act) {
+  const author = loginOf(pr.author);
+  const reviews = (act?.reviews.nodes ?? pr.latestReviews.nodes)
+    // A review still in draft has no submittedAt, and nobody else can see it yet.
+    .filter((v) => v.submittedAt && v.state !== "PENDING")
+    .map((v) => ({ login: loginOf(v.author), isBot: v.author?.__typename === "Bot", state: v.state, at: v.submittedAt }))
+    .sort((a, b) => a.at.localeCompare(b.at));
+  // Opening the PR counts as its first push.
+  const lastPush = latest([pr.createdAt, ...(act?.commits.nodes ?? []).map((n) => n.commit.committedDate)]);
+  // Everything the author has done, review-thread replies of their own included.
+  const authorActs = [
+    pr.createdAt,
+    lastPush,
+    ...(act?.comments.nodes ?? []).filter((c) => author && loginOf(c.author) === author).map((c) => c.createdAt),
+    ...reviews.filter((v) => author && v.login === author).map((v) => v.at),
+  ];
+  return {
+    reviews: reviews.filter((v) => v.login !== author && !v.isBot),
+    authorActs,
+    authorAt: latest(authorActs),
+    lastPush,
+  };
+}
+
+/**
+ * Whose move it is on one pick, since when, and the story of how it got there -- the same rules
+ * as `assigned.sh --summary`, which is where they were worked out.
+ *
+ * The move belongs to a side, not a person: reviewers confer, so any review that asks the author
+ * for something (anything but an approval) and that the author has not answered puts the PR on
+ * the author's side, whoever wrote it. Once the author answers, it is back with the reviewers,
+ * and the wait runs from that FIRST answer: later comments do not restart it, or an author
+ * pinging for news would make the wait look fresh. A later push does, since until the fix is in
+ * there may be nothing new to review. Never earlier than the pick: what a reviewer is late on
+ * starts the day they were asked.
+ *
+ * A pick who has reviewed since being asked owes a follow-up, not a first look -- including one
+ * the author re-requested, whom GitHub lists as pending just like somebody never asked before.
+ *
+ * `picks` is every task force pick on the PR: the story names the last review by one of them,
+ * since a review from outside helps the PR but is not what the pick is following up.
+ */
+function turnOf(pr, r, a, picks) {
+  const pickAt = r.assignedAt;
+  const firstAnswerAfter = (t) => {
+    const later = a.authorActs.filter((x) => x > t);
+    return later.length ? earliest(later) : null;
+  };
+  const lastDemand = a.reviews.filter((v) => v.state !== "APPROVED").at(-1);
+
+  const ev = (at, text) => ({ at, text });
+  const told = (events, tail) =>
+    [...events]
+      .sort((x, y) => x.at.localeCompare(y.at))
+      .map((e) => e.text)
+      .concat(tail)
+      .join(", ");
+  const picked = ev(pickAt, `picked ${day(pickAt)}`);
+
+  if (lastDemand && lastDemand.at > a.authorAt && lastDemand.at > pickAt) {
+    return {
+      turn: "author",
+      turnSince: lastDemand.at,
+      story: told([picked, ev(lastDemand.at, `${lastDemand.login} reviewed ${day(lastDemand.at)}`)], "author has not responded"),
+    };
+  }
+
+  const answered = lastDemand ? firstAnswerAfter(lastDemand.at) : null;
+  const since = latest([pickAt, answered, a.lastPush]);
+
+  const tf = a.reviews.filter((v) => picks.has(v.login));
+  const tfDemand = tf.filter((v) => v.state !== "APPROVED").at(-1);
+  const tfApproval = tf.filter((v) => v.state === "APPROVED" && v.login !== r.login && (!tfDemand || v.at > tfDemand.at)).at(-1);
+  // A push only earns a mention when it is what started the clock.
+  const pushed = since === a.lastPush && a.lastPush > pr.createdAt ? [ev(a.lastPush, `last pushed ${day(a.lastPush)}`)] : [];
+  const approved = tfApproval ? [ev(tfApproval.at, `${tfApproval.login} approved ${day(tfApproval.at)}`)] : [];
+  const nothing = `nothing from ${r.login} since`;
+
+  let events;
+  let tail;
+  if (tfDemand && a.authorAt > tfDemand.at) {
+    const responded = firstAnswerAfter(tfDemand.at);
+    events = [
+      ev(tfDemand.at, `${tfDemand.login} reviewed ${day(tfDemand.at)}`),
+      ev(responded, `author responded ${day(responded)}`),
+      // Said once is enough when the push came the same day.
+      ...pushed.filter((e) => day(e.at) !== day(responded)),
+      ...approved,
+    ];
+    tail = approved.length ? nothing : "no review since";
+  } else if (!tfDemand && approved.length) {
+    events = [...approved, ...pushed];
+    tail = nothing;
+  } else if (!tf.length) {
+    events = [ev(pr.createdAt, `opened ${day(pr.createdAt)}`), ...pushed];
+    tail = "no task force review since";
+  } else {
+    const last = tf.at(-1);
+    events = [ev(last.at, `${last.login} reviewed ${day(last.at)}`), ...pushed];
+    tail = nothing;
+  }
+
+  const reviewedSincePick = a.reviews.some((v) => v.login === r.login && v.at >= pickAt);
+  return { turn: reviewedSincePick ? "followup" : "first", turnSince: since, story: told([picked, ...events], tail) };
+}
+
+/**
+ * Stamp each task force pick on an open PR with whose turn it is (see turnOf), and the PR with
+ * the pick it has waited on longest. `taskForce` is null on a PR with no pick, and its `kind`
+ * is "first" or "followup" while a pick owes a look, "author" when every pick still owing
+ * something is waiting on the author, and "done" when they have all approved.
+ */
+function withTurns(pr, raw, act) {
+  const picks = new Set(pr.reviewers.filter((r) => r.origin === "mine").map((r) => r.login));
+  if (!picks.size) return { ...pr, taskForce: null };
+
+  const a = activityOf(raw, act);
+  const reviewers = pr.reviewers.map((r) =>
+    r.origin !== "mine" || r.isBot || r.state === "APPROVED" ? r : { ...r, ...turnOf(raw, r, a, picks) },
+  );
+  const oldest = (turns) =>
+    reviewers.filter((r) => turns.includes(r.turn)).sort((x, y) => x.turnSince.localeCompare(y.turnSince))[0];
+  const owed = oldest(["first", "followup"]) ?? oldest(["author"]);
+  return {
+    ...pr,
+    reviewers,
+    taskForce: owed
+      ? { kind: owed.turn, reviewer: owed.login, since: owed.turnSince, story: owed.story }
+      : { kind: "done", reviewer: null, since: null, story: null },
+  };
+}
+
 // Draft normally means "not ready for review", which is why drafts stay off the board. JSAG
 // submissions are the exception: policy has them opened as drafts and they are still meant to
 // be reviewed, so for them the label -- not the draft flag -- decides. Matched case-insensitively
@@ -312,6 +463,16 @@ export const REVIEW_READY_DRAFT_LABEL = "JSAG";
 export const isReviewable = (pr) =>
   !pr.isDraft ||
   pr.labels.nodes.some((l) => l.name.toLowerCase() === REVIEW_READY_DRAFT_LABEL.toLowerCase());
+
+/**
+ * The open PRs worth the second fetch: every reviewable one with a task force pick on it.
+ * Whose turn it is only matters for those, and they are a fraction of the open queue.
+ */
+export const pickedNumbers = (rawPrs, { me, start = null }) =>
+  rawPrs
+    .filter(isReviewable)
+    .filter((pr) => reviewersFor(pr, me, start).some((r) => r.origin === "mine"))
+    .map((pr) => pr.number);
 
 const shape = (pr, me, start) => ({
   number: pr.number,
@@ -326,11 +487,14 @@ const shape = (pr, me, start) => ({
   reviewers: reviewersFor(pr, me, start),
 });
 
-/** Open PRs -> table rows, reviewer workload, the two gap numbers, and the wait times. */
-function reconcileOpen(rawPrs, me, start, now) {
+/**
+ * Open PRs -> table rows, reviewer workload, the gap numbers, and the wait times. `activity`
+ * is the second fetch, keyed by PR number; a PR missing from it falls back (see activityOf).
+ */
+function reconcileOpen(rawPrs, activity, me, start, now) {
   const prs = rawPrs
     .filter(isReviewable)
-    .map((pr) => shape(pr, me, start))
+    .map((pr) => withTurns(shape(pr, me, start), pr, activity[pr.number]))
     .sort((a, b) => b.number - a.number);
 
   // Every KPI here counts PRs, not reviewer slots, so the headline numbers partition the
@@ -374,6 +538,9 @@ function reconcileOpen(rawPrs, me, start, now) {
       // untended PRs in a pile where somebody was already mid-review.
       pending: waiting.length,
       pendingMine: pendingMine.length,
+      // PRs where it is a task force pick's move -- a first look or a follow-up. The headline
+      // number, and the same one the wait times below it measure.
+      waitingMine: prs.filter((p) => p.taskForce?.kind === "first" || p.taskForce?.kind === "followup").length,
       inProgress: underway.length,
       noOneOnHook: prs.length - waiting.length - underway.length,
       // A PR nobody has touched at all: a strict subset of noOneOnHook, and the only one of
@@ -384,14 +551,20 @@ function reconcileOpen(rawPrs, me, start, now) {
 }
 
 /** Merged PRs -> table rows and approval counts, newest merge first. */
-function reconcileMerged(rawPrs, me, start, { since, months }) {
+// The short window the merged tab reports beside the full one, in days.
+const RECENT_DAYS = 30;
+
+function reconcileMerged(rawPrs, me, start, { since, months, now }) {
   const prs = rawPrs
     .map((pr) => shape(pr, me, start))
     .sort((a, b) => (a.mergedAt < b.mergedAt ? 1 : a.mergedAt > b.mergedAt ? -1 : b.number - a.number));
 
   const approvals = approvalsFrom(prs);
   const taskForce = mergedTaskForce(prs);
-  const approved = prs.filter((p) => p.reviewers.some((r) => r.state === "APPROVED"));
+  // Merges carrying an approval from someone the assigner put there: the task force's actual
+  // output. Whether other merges had an approval is M2's business, not the task force's.
+  const approvedByPick = prs.filter((p) => p.reviewers.some((r) => r.state === "APPROVED" && r.origin === "mine"));
+  const recentSince = new Date(Date.parse(now) - RECENT_DAYS * DAY_MS).toISOString();
 
   return {
     since,
@@ -401,24 +574,23 @@ function reconcileMerged(rawPrs, me, start, { since, months }) {
     taskForce,
     stats: {
       prs: prs.length,
-      approved: approved.length,
-      // A merged PR nobody approved. Common on M2 and not inherently wrong -- it is the
-      // baseline the task force exists to move.
-      unapproved: prs.length - approved.length,
-      // Merges carrying an approval from someone the assigner put there: the task force's
-      // actual output. Expect this to be tiny until a full window post-dates the effort.
-      taskForce: prs.filter((p) => p.reviewers.some((r) => r.state === "APPROVED" && r.origin === "mine")).length,
+      taskForce: approvedByPick.length,
+      // The same, over the last RECENT_DAYS: the full window is mostly history once the effort
+      // is a few months old, and this is the number that says what it is doing now.
+      taskForceRecent: approvedByPick.filter((p) => p.mergedAt >= recentSince).length,
+      recentDays: RECENT_DAYS,
+      recentSince: day(recentSince),
     },
   };
 }
 
 /** Raw API nodes -> the full data model baked into the page. */
 export function reconcile(
-  { open: rawOpen, merged: rawMerged = [], since = null, months = 3 },
+  { open: rawOpen, merged: rawMerged = [], activity = {}, since = null, months = 3 },
   { me, repo, start = null, generatedAt = new Date().toISOString() },
 ) {
-  const open = reconcileOpen(rawOpen, me, start, generatedAt);
-  const merged = reconcileMerged(rawMerged, me, start, { since, months });
+  const open = reconcileOpen(rawOpen, activity, me, start, generatedAt);
+  const merged = reconcileMerged(rawMerged, me, start, { since, months, now: generatedAt });
   return {
     generatedAt,
     repo,

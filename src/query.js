@@ -58,6 +58,41 @@ query($q: String!, $cursor: String) {
   }
 }${FRAGMENTS}`;
 
+// The second fetch: what the author has done and every review round, which is what whose turn
+// it is depends on. Asked only for the PRs the task force has a pick on (reconcile.js
+// pickedNumbers) rather than for every open PR, so the first query stays as light as it was.
+//
+// `last: 100` comments and `first: 100` reviews are not paginated. What falls outside them is
+// a PR with more than 100 comments since the author's first answer, which can only make a wait
+// read shorter -- the safe direction for a list of stalls.
+const ACTIVITY_FRAGMENT = `
+fragment Activity on PullRequest {
+  commits(last: 1) { nodes { commit { committedDate } } }
+  comments(last: 100) { nodes { author { login } createdAt } }
+  reviews(first: 100) { nodes { state submittedAt author { __typename login } } }
+}`;
+// PRs per query, each under its own alias. Small enough to stay well inside the node limit.
+const ACTIVITY_BATCH = 20;
+
+/** Author activity for the given open PR numbers, keyed by number. */
+export async function fetchActivity({ owner, name, token, numbers }) {
+  const out = {};
+  for (let i = 0; i < numbers.length; i += ACTIVITY_BATCH) {
+    const batch = numbers.slice(i, i + ACTIVITY_BATCH);
+    // The numbers come from the API as integers, so interpolating them is safe.
+    const fields = batch.map((n) => `p${n}: pullRequest(number: ${Number(n)}) { ...Activity }`).join("\n    ");
+    const query = `
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    ${fields}
+  }
+}${ACTIVITY_FRAGMENT}`;
+    const data = await post(token, query, { owner, name });
+    for (const n of batch) out[n] = data.repository[`p${n}`];
+  }
+  return out;
+}
+
 // GITHUB_TOKEN in CI; the gh CLI's token locally, so a local run needs no setup.
 // Attribution is impossible without a token: unauthenticated GraphQL is a hard 403.
 export function resolveToken() {

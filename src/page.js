@@ -30,12 +30,14 @@ const LABELS = {
   DISMISSED: "dismissed",
 };
 
-// The two views differ only in their tail column, what an outstanding request means, and
-// which aggregate sits underneath. Everything else is shared.
+// The two views differ only in their tail column, whether they show whose turn it is, what an
+// outstanding request means, and which aggregate sits underneath. Everything else is shared.
 const VIEWS = {
   open: {
     d: () => DATA.open,
     tail: (pr) => pr.updatedAt,
+    // Merged PRs are nobody's turn, so only the open table carries the Waiting column.
+    waiting: true,
     // Still waiting on them.
     stateLabel: (s) => (s === "PENDING" ? "pending" : LABELS[s] ?? s),
     sort: "number",
@@ -82,6 +84,10 @@ function reviewerSpan(r, view) {
   if (r.isBot) n.append(el("span", "rv-bot", "bot"));
   if (r.state !== "PENDING" || view === VIEWS.merged) {
     n.append(el("span", `badge ${STATE_CLASS[r.state] ?? "st-mute"}`, view.stateLabel(r.state)));
+  } else if (r.turn === "followup") {
+    // Pending, but not for the first time: GitHub lists a re-requested reviewer exactly like
+    // one never asked, and without this they read as somebody who has not looked yet.
+    n.append(el("span", "badge st-mute", "re-requested"));
   }
   const on = r.assignedAt ? ` on ${r.assignedAt.slice(0, 10)}` : "";
   n.title =
@@ -92,7 +98,36 @@ function reviewerSpan(r, view) {
         : r.assignedBy === DATA.assigner
           ? `${DATA.assigner} requested ${r.login}${on}, before the task force began`
           : `Requested by ${r.assignedBy}${on} — not a task force selection`;
+  if (r.story) n.title += `\n${TURN_WORDS[r.turn]}: ${r.story}`;
   return n;
+}
+
+const TURN_WORDS = {
+  first: "Owes a first review",
+  followup: "Owes a follow-up",
+  author: "Waiting on the author",
+};
+const owesLook = (t) => t?.kind === "first" || t?.kind === "followup";
+
+// Days on the review side for a PR the task force is waiting on, with the story in the
+// tooltip so the number can be checked; a word for the other states. Days rather than `ago`,
+// which rounds to months, since this is the column a reader compares against the stalled line.
+function waitCell(pr) {
+  const t = pr.taskForce;
+  const td = el("td", "col-wait num");
+  if (owesLook(t)) {
+    const d = days(t.since);
+    td.textContent = `${d}d`;
+    if (d > DATA.open.taskForce.stalledDays) td.classList.add("stalled");
+    td.title = `${TURN_WORDS[t.kind]} from ${t.reviewer}: ${t.story}`;
+  } else if (t?.kind === "author") {
+    td.append(el("span", "turn-author", "author"));
+    td.title = `${TURN_WORDS.author}: ${t.story}`;
+  } else {
+    td.textContent = "—";
+    td.title = t ? "Every task force selection has approved" : "No task force selection";
+  }
+  return td;
 }
 
 function prRow(pr, view) {
@@ -137,7 +172,9 @@ function prRow(pr, view) {
   const tail = el("td", "col-upd num", ago(view.tail(pr)));
   tail.title = view.tail(pr) ?? "";
 
-  tr.append(num, title, el("td", "col-author", pr.author), labels, revs, age, tail);
+  tr.append(num, title, el("td", "col-author", pr.author), labels, revs);
+  if (view.waiting) tr.append(waitCell(pr));
+  tr.append(age, tail);
   return tr;
 }
 
@@ -150,6 +187,8 @@ const PR_KEY = {
   labels: (p) => p.labels.length,
   reviewers: (p) => p.reviewers.length,
   age: (p) => Date.parse(p.createdAt),
+  // Longest wait first when descending; then PRs on the author, then everything else.
+  wait: (p) => (owesLook(p.taskForce) ? Date.now() - Date.parse(p.taskForce.since) : p.taskForce?.kind === "author" ? -1 : -2),
 };
 
 function visiblePrs(view, st) {
@@ -168,6 +207,10 @@ function visiblePrs(view, st) {
         return has((r) => r.origin === "mine");
       case "notmine":
         return !has((r) => r.origin === "mine");
+      case "tf-waiting":
+        return owesLook(pr.taskForce);
+      case "tf-author":
+        return pr.taskForce?.kind === "author";
       case "started":
         return !has(pending) && has(underway);
       case "nohook":
@@ -300,9 +343,10 @@ function drawWaitTimes() {
   // Every figure in this section is about PRs that already have a reviewer on them; the
   // PRs nobody has been asked to review are the "nobody on the hook" KPI above, not this.
   $("#tf-open-note").textContent =
-    `of the ${o.prs} open PRs with a reviewer ${DATA.assigner} requested, ${o.answered} have been answered`;
+    `of the ${o.prs} open PRs with a reviewer ${DATA.assigner} requested, ${o.waiting} are waiting on one ` +
+    `(${o.followup} for a follow-up), ${o.onAuthor} on the author, and ${o.done} are approved`;
   // Not the count of waiting PRs: that is definitionally the same number as the
-  // "awaiting review — assigned by <assigner>" KPI directly above, and printing it twice
+  // "waiting on a task force selection" KPI directly above, and printing it twice
   // just costs a slot. The note line carries the denominator instead.
   $("#tf-median").textContent = dur(o.medianDays);
   $("#tf-oldest").textContent = dur(o.oldestDays);
@@ -384,7 +428,8 @@ const drawWorkload = () =>
       reviewer: (r) => r.login.toLowerCase(),
       total: (r) => r.total,
       waiting: (r) => r.waiting,
-      started: (r) => r.started,
+      followup: (r) => r.followup,
+      author: (r) => r.author,
     },
     cols: [
       {
@@ -393,11 +438,13 @@ const drawWorkload = () =>
         // The two stages in order, so the bar reads as a progress split rather than a total.
         segments: (r) => [
           { value: r.waiting, title: `${r.waiting} awaiting a first review` },
-          { value: r.started, title: `${r.started} reviewed, not approved` },
+          { value: r.followup, title: `${r.followup} owed a follow-up` },
         ],
       },
       { key: "waiting" },
-      { key: "started" },
+      { key: "followup" },
+      // Beside the total rather than in it: nothing to ask this reviewer until the author answers.
+      { key: "author" },
     ],
   });
 
@@ -489,7 +536,7 @@ function init() {
     $("#kpi-prs-note").textContent =
       `includes ${o.drafts} ${o.draftLabel} draft${o.drafts === 1 ? "" : "s"}`;
   }
-  $("#kpi-mine").textContent = o.pendingMine;
+  $("#kpi-mine").textContent = o.waitingMine;
   $("#kpi-untriaged").textContent = o.untriaged;
   $("#kpi-untriaged-since").textContent = startLabel({ month: "short", day: "numeric" });
   $("#kpi-untriaged-note").textContent = o.untriagedNoReviewer
@@ -497,18 +544,15 @@ function init() {
     : "";
 
   const m = DATA.merged.stats;
-  $("#kpi-merged").textContent = m.prs;
-  $("#kpi-approved").textContent = m.approved;
-  $("#kpi-unapproved").textContent = m.unapproved;
-  $("#kpi-taskforce").textContent = m.taskForce;
+  const dateLabel = (d) =>
+    new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+  $("#kpi-tf-recent").textContent = m.taskForceRecent;
+  $("#kpi-tf-recent-days").textContent = String(m.recentDays);
+  $("#kpi-tf-recent-since").textContent = dateLabel(m.recentSince);
+  $("#kpi-tf-window").textContent = m.taskForce;
   $("#tab-open-count").textContent = o.prs;
   $("#tab-merged-count").textContent = m.prs;
-  $("#merged-since").textContent = new Date(`${DATA.merged.since}T00:00:00Z`).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+  $("#merged-since").textContent = dateLabel(DATA.merged.since);
 
   const when = new Date(DATA.generatedAt);
   $("#generated").textContent = when.toLocaleString();
