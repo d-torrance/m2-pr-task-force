@@ -125,7 +125,9 @@ JQ
 # answers -- pushing, commenting, or reviewing their own PR -- the move is back with the
 # reviewers, and the wait runs from that first answer. Later comments do not restart it, or an
 # author pinging for news would make the wait look fresh; a later push does, since until it
-# lands there may be nothing new to review. Bot reviews do not count.
+# lands there may be nothing new to review. A comment on the conversation from anybody but the
+# author is a review too: answering the author there hands the PR back just as surely. Bot
+# reviews and comments do not count.
 #
 # An approval by somebody else asks the author for nothing, so it leaves the move where it
 # was: if this reviewer has not been back since one landed, their sign-off is what the PR is
@@ -146,7 +148,7 @@ query($q: String!) {
         author { login }
         labels(first: 50) { nodes { name } }
         commits(last: 1) { nodes { commit { committedDate } } }
-        comments(last: 100) { nodes { author { login } createdAt } }
+        comments(last: 100) { nodes { author { __typename login } createdAt } }
         reviewRequests(first: 30) {
           nodes { requestedReviewer { __typename ... on User { login } } }
         }
@@ -170,12 +172,15 @@ GRAPHQL
 )
 
 picks=$(cat <<'JQ'
+# "alice reviewed 2026-07-01", or "commented" for a comment on the conversation.
+def said: "\(.author.login) \(if .comment then "commented" else "reviewed" end) \(.submittedAt | date)";
 def picks:
   [ .data.search.nodes[]
     | select(reviewable)
     | . as $pr
-    | ([.reviews.nodes[] | select(.submittedAt != null and .author.login != $pr.author.login
-                                  and .author.__typename != "Bot")]
+    | ([ (.reviews.nodes[] | select(.submittedAt != null)),
+         (.comments.nodes[] | { author, state: "COMMENTED", submittedAt: .createdAt, comment: true }) ]
+       | map(select(.author.login != $pr.author.login and .author.__typename != "Bot"))
        | sort_by(.submittedAt)) as $reviews
     | ([$reviews[] | select(.author.login == me)] | sort_by(.submittedAt)) as $mine
     | ([$mine[] | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")]
@@ -231,7 +236,7 @@ def picks:
             since: $last_demand.submittedAt,
             why: ([ ([$picked_event,
                       { at: $last_demand.submittedAt,
-                        text: "\($last_demand.author.login) reviewed \($last_demand.submittedAt | date)" }]
+                        text: "\($last_demand | said)" }]
                      | sort_by(.at)[] | .text), "author has not responded" ] | join(", ")) }
         else
           # The ball is on the review side, since the author first answered the last review
@@ -250,7 +255,7 @@ def picks:
           | (if $tf_demand != null and $author_at > $tf_demand.submittedAt then
                ([$author_acts[] | select(. > $tf_demand.submittedAt)] | min) as $responded
                | { events: [ { at: $tf_demand.submittedAt,
-                               text: "\($tf_demand.author.login) reviewed \($tf_demand.submittedAt | date)" },
+                               text: "\($tf_demand | said)" },
                              { at: $responded, text: "author responded \($responded | date)" },
                              # Said once is enough when the push came the same day.
                              ($pushed[] | select((.at | date) != ($responded | date))),
@@ -264,7 +269,7 @@ def picks:
                  tail: "no task force review since" }
              else
                { events: [ { at: $last_review.submittedAt,
-                             text: "\($last_review.author.login) reviewed \($last_review.submittedAt | date)" },
+                             text: "\($last_review | said)" },
                            $pushed[], $picked_event ],
                  tail: "nothing from \(me) since" }
              end) as $story

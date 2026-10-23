@@ -308,6 +308,20 @@ test("an unanswered review is the author's turn, whoever wrote it", () => {
   assert.equal(rev(107, "bob").story, "picked 2026-07-08, bob reviewed 2026-07-13, author has not responded");
 });
 
+test("a reviewer's comment is a review: it hands the PR back to the author", () => {
+  const commented = (author) => {
+    const r = JSON.parse(JSON.stringify(raw));
+    r.activity[103].comments.nodes.push({ author, createdAt: "2026-07-14T00:00:00Z" });
+    return reconcile({ ...r, since: "2026-04-15", months: 3 }, opts).open.prs.find((p) => p.number === 103);
+  };
+  const p = commented({ __typename: "User", login: "alice" });
+  assert.equal(p.taskForce.kind, "author");
+  assert.equal(p.taskForce.since, "2026-07-14T00:00:00Z");
+  assert.equal(p.taskForce.story, "picked 2026-06-11, alice commented 2026-07-14, author has not responded");
+  // A bot's comment is not somebody handing the PR back.
+  assert.equal(commented({ __typename: "Bot", login: "github-actions" }).taskForce.kind, "followup");
+});
+
 test("a bot review does not hand the PR to the author", () => {
   assert.equal(pr(104).taskForce.kind, "first");
   assert.equal(pr(104).taskForce.since, "2026-06-21T00:00:00Z");

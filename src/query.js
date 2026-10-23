@@ -68,7 +68,7 @@ query($q: String!, $cursor: String) {
 const ACTIVITY_FRAGMENT = `
 fragment Activity on PullRequest {
   commits(last: 1) { nodes { commit { committedDate } } }
-  comments(last: 100) { nodes { author { login } createdAt } }
+  comments(last: 100) { nodes { author { __typename login } createdAt } }
   reviews(first: 100) { nodes { state submittedAt author { __typename login } } }
 }`;
 // PRs per query, each under its own alias. Small enough to stay well inside the node limit.

@@ -323,7 +323,10 @@ const day = (iso) => iso.slice(0, 10);
  * round, which `latestReviews` collapses to one per person. Without it this falls back to
  * what the first fetch has -- enough to run, but blind to anything the author did.
  *
- * Bot reviews are left out: a bot asking the author for something is not a reviewer handing
+ * A comment on the conversation counts as a COMMENTED review: a reviewer who answers the
+ * author there has handed the PR back just as surely as one who submits a review.
+ *
+ * Bot reviews and comments are left out: a bot asking the author for something is not a reviewer handing
  * the PR back, and counting it would park every PR Copilot touched on the author's side.
  */
 function activityOf(pr, act) {
@@ -332,16 +335,20 @@ function activityOf(pr, act) {
     // A review still in draft has no submittedAt, and nobody else can see it yet.
     .filter((v) => v.submittedAt && v.state !== "PENDING")
     .map((v) => ({ login: loginOf(v.author), isBot: v.author?.__typename === "Bot", state: v.state, at: v.submittedAt }))
+    .concat(
+      (act?.comments.nodes ?? []).map((c) => ({
+        login: loginOf(c.author),
+        isBot: c.author?.__typename === "Bot",
+        state: "COMMENTED",
+        comment: true,
+        at: c.createdAt,
+      })),
+    )
     .sort((a, b) => a.at.localeCompare(b.at));
   // Opening the PR counts as its first push.
   const lastPush = latest([pr.createdAt, ...(act?.commits.nodes ?? []).map((n) => n.commit.committedDate)]);
-  // Everything the author has done, review-thread replies of their own included.
-  const authorActs = [
-    pr.createdAt,
-    lastPush,
-    ...(act?.comments.nodes ?? []).filter((c) => author && loginOf(c.author) === author).map((c) => c.createdAt),
-    ...reviews.filter((v) => author && v.login === author).map((v) => v.at),
-  ];
+  // Everything the author has done: comments, and review-thread replies of their own.
+  const authorActs = [pr.createdAt, lastPush, ...reviews.filter((v) => author && v.login === author).map((v) => v.at)];
   return {
     reviews: reviews.filter((v) => v.login !== author && !v.isBot),
     authorActs,
@@ -377,6 +384,7 @@ function turnOf(pr, r, a, picks) {
   const lastDemand = a.reviews.filter((v) => v.state !== "APPROVED").at(-1);
 
   const ev = (at, text) => ({ at, text });
+  const said = (v) => ev(v.at, `${v.login} ${v.comment ? "commented" : "reviewed"} ${day(v.at)}`);
   const told = (events, tail) =>
     [...events]
       .sort((x, y) => x.at.localeCompare(y.at))
@@ -389,7 +397,7 @@ function turnOf(pr, r, a, picks) {
     return {
       turn: "author",
       turnSince: lastDemand.at,
-      story: told([picked, ev(lastDemand.at, `${lastDemand.login} reviewed ${day(lastDemand.at)}`)], "author has not responded"),
+      story: told([picked, said(lastDemand)], "author has not responded"),
     };
   }
 
@@ -409,7 +417,7 @@ function turnOf(pr, r, a, picks) {
   if (tfDemand && a.authorAt > tfDemand.at) {
     const responded = firstAnswerAfter(tfDemand.at);
     events = [
-      ev(tfDemand.at, `${tfDemand.login} reviewed ${day(tfDemand.at)}`),
+      said(tfDemand),
       ev(responded, `author responded ${day(responded)}`),
       // Said once is enough when the push came the same day.
       ...pushed.filter((e) => day(e.at) !== day(responded)),
@@ -424,7 +432,7 @@ function turnOf(pr, r, a, picks) {
     tail = "no task force review since";
   } else {
     const last = tf.at(-1);
-    events = [ev(last.at, `${last.login} reviewed ${day(last.at)}`), ...pushed];
+    events = [said(last), ...pushed];
     tail = nothing;
   }
 
