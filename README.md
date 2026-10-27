@@ -85,7 +85,8 @@ free capacity looks like, and dropping it would hide the person most available t
 The open tab leads with **PRs opened since the start date that the assigner has not put anybody
 on** — the task force's own inbox, and the one queue that can be kept at zero. Dated from the
 start deliberately: M2 has open PRs going back four years, and mixing that backlog in buries the
-handful of new arrivals that actually need a decision this week.
+handful of new arrivals that actually need a decision this week. PRs labelled `waiting for another
+PR` are left out too: there is nothing to review until the other one lands.
 
 `data.json` still carries the wider gap numbers, and the PR table can filter on them, but the
 headline row stays on the number that implies an action. Those numbers split the open queue

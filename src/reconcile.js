@@ -472,10 +472,14 @@ function withTurns(pr, raw, act) {
 // so a "jsag" label is not silently dropped.
 export const REVIEW_READY_DRAFT_LABEL = "JSAG";
 
+// A PR parked behind another one: there is nothing to review yet, so it is no gap that the
+// task force has not put anybody on it.
+export const BLOCKED_LABEL = "waiting for another PR";
+
+const hasLabel = (labels, name) => labels.some((l) => l.name.toLowerCase() === name.toLowerCase());
+
 /** An open PR the dashboard tracks: any non-draft, plus a draft the review policy marks ready. */
-export const isReviewable = (pr) =>
-  !pr.isDraft ||
-  pr.labels.nodes.some((l) => l.name.toLowerCase() === REVIEW_READY_DRAFT_LABEL.toLowerCase());
+export const isReviewable = (pr) => !pr.isDraft || hasLabel(pr.labels.nodes, REVIEW_READY_DRAFT_LABEL);
 
 /**
  * The open PRs worth the second fetch: every reviewable one with a task force pick on it.
@@ -520,7 +524,10 @@ function reconcileOpen(rawPrs, activity, me, start, now) {
   // deletes the request the moment the review lands -- see workloadFrom.
   const isUnderway = (r) => !isPending(r) && r.state !== "APPROVED";
   const untriaged = prs.filter(
-    (p) => (!start || p.createdAt >= start) && !p.reviewers.some((r) => r.origin === "mine"),
+    (p) =>
+      (!start || p.createdAt >= start) &&
+      !p.reviewers.some((r) => r.origin === "mine") &&
+      !hasLabel(p.labels, BLOCKED_LABEL),
   );
   const waiting = prs.filter((p) => p.reviewers.some(isPending));
   // Awaiting a first review takes precedence: if anyone is still to look at all, that is the
@@ -541,7 +548,8 @@ function reconcileOpen(rawPrs, activity, me, start, now) {
       // The task force's own inbox: PRs that have arrived since it began and that the
       // assigner has not put anybody on. Dated from the start deliberately -- the years of
       // backlog before it are a different problem, and burying this number in them hides the
-      // one queue that can actually be kept at zero.
+      // one queue that can actually be kept at zero. PRs waiting on another PR are left out:
+      // they have nothing to review yet.
       untriaged: untriaged.length,
       untriagedNoReviewer: untriaged.filter((p) => p.reviewers.length === 0).length,
       // Three states, because "waiting" and "abandoned" are different problems: `pending` is

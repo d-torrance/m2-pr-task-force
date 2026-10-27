@@ -154,6 +154,18 @@ test("the gap numbers measure different things", () => {
   assert.equal(s.inProgress, 2);
 });
 
+test("a PR waiting on another PR is no gap in the task force's coverage", () => {
+  // #105 has no reviewer at all, so it is untriaged until it is parked behind another PR.
+  const parked = JSON.parse(JSON.stringify(raw));
+  parked.open.find((p) => p.number === 105).labels.nodes.push({ name: "Waiting for another PR", color: "0e8a16" });
+  const d = reconcile({ ...parked, since: "2026-04-15", months: 3 }, opts);
+  assert.equal(d.open.stats.untriaged, data.open.stats.untriaged - 1);
+  assert.equal(d.open.stats.untriagedNoReviewer, data.open.stats.untriagedNoReviewer - 1);
+  // It is still on the board, and still counted as having nobody on it.
+  assert.ok(d.open.prs.some((p) => p.number === 105));
+  assert.equal(d.open.stats.unassigned, data.open.stats.unassigned);
+});
+
 test("a review underway does not count as awaiting a first look", () => {
   // #100 has carol's comment AND alice and bob still to look: pending wins, because the
   // first review is the more urgent thing missing.
