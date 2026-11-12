@@ -3,8 +3,8 @@
 // does no fetching, so the output opens straight from disk with no server.
 
 import { mkdir, writeFile } from "node:fs/promises";
-import { fetchActivity, fetchMergedPullRequests, fetchOpenPullRequests, resolveToken } from "./src/query.js";
-import { pickedNumbers, reconcile } from "./src/reconcile.js";
+import { fetchActivity, fetchComparisons, fetchMergedPullRequests, fetchOpenPullRequests, resolveToken } from "./src/query.js";
+import { comparisons, pickedNumbers, reconcile } from "./src/reconcile.js";
 import { render } from "./src/render.js";
 
 const OWNER = process.env.TASK_FORCE_OWNER || "Macaulay2";
@@ -36,13 +36,17 @@ const [activity, merged] = await Promise.all([
   fetchActivity({ owner: OWNER, name: NAME, token, numbers }),
   mergedP,
 ]);
+// What each follow-up has to read: the changes since the commit the reviewer last reviewed.
+const keys = comparisons(open, activity, { me: ME, start: START });
+const compares = await fetchComparisons({ owner: OWNER, name: NAME, token, keys });
 
-const data = reconcile({ open, merged, activity, since, months: MONTHS }, { me: ME, repo, start: START });
+const data = reconcile({ open, merged, activity, compares, since, months: MONTHS }, { me: ME, repo, start: START });
 
 const o = data.open.stats;
 console.log(`\nopen:`);
 console.log(`  ${open.length} open — ${o.prs} up for review (${o.drafts} ${o.draftLabel} draft), ${open.length - o.prs} other draft skipped`);
 console.log(`  ${numbers.length} with a task force pick, fetched for author activity`);
+console.log(`  ${keys.length} reviewed commits compared with the head, ${Object.values(compares).filter((c) => !c).length} of them not comparable`);
 console.log(`  ${o.pending} PRs awaiting review — ${o.pendingMine} with a task force pick (by ${ME} since ${START}), ${o.pending - o.pendingMine} assigned only by others`);
 console.log(`  ${o.inProgress} with a review underway but no approval, ${o.noOneOnHook} with nobody on them at all`);
 console.log(`  ${o.untriaged} opened since ${START} with no reviewer from ${ME} (${o.untriagedNoReviewer} with no reviewer at all)`);

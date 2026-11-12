@@ -65,11 +65,20 @@ query($q: String!, $cursor: String) {
 // `last: 100` comments and `first: 100` reviews are not paginated. What falls outside them is
 // a PR with more than 100 comments since the author's first answer, which can only make a wait
 // read shorter -- the safe direction for a list of stalls.
+//
+// The rest sizes a review: the PR's diff, and for a follow-up the head commit, the files, and
+// the commit each review was on, to tell what changed since the reviewer last looked (see
+// fetchComparisons). Here rather than in the main query, which asking for diff sizes on every
+// PR slows past what GitHub will serve.
 const ACTIVITY_FRAGMENT = `
 fragment Activity on PullRequest {
+  additions
+  deletions
+  headRefOid
+  files(first: 100) { nodes { path } }
   commits(last: 1) { nodes { commit { committedDate } } }
   comments(last: 100) { nodes { author { __typename login } createdAt } }
-  reviews(first: 100) { nodes { state submittedAt author { __typename login } } }
+  reviews(first: 100) { nodes { state submittedAt author { __typename login } commit { oid } } }
 }`;
 // PRs per query, each under its own alias. Small enough to stay well inside the node limit.
 const ACTIVITY_BATCH = 20;
@@ -89,6 +98,30 @@ query($owner: String!, $name: String!) {
 }${ACTIVITY_FRAGMENT}`;
     const data = await post(token, query, { owner, name });
     for (const n of batch) out[n] = data.repository[`p${n}`];
+  }
+  return out;
+}
+
+// Comparisons at a time: enough to be quick, few enough not to trip the secondary rate limit.
+const COMPARE_BATCH = 6;
+
+/**
+ * The files changed between two commits, for each "base...head" key: what a reviewer has to
+ * read on a follow-up. REST only -- GraphQL cannot compare commits. A comparison GitHub cannot
+ * make (the reviewed commit was force-pushed away, say) comes back null, and the follow-up is
+ * then sized as the whole PR.
+ */
+export async function fetchComparisons({ owner, name, token, keys }) {
+  const out = {};
+  for (let i = 0; i < keys.length; i += COMPARE_BATCH) {
+    await Promise.all(
+      keys.slice(i, i + COMPARE_BATCH).map(async (key) => {
+        const res = await fetch(`https://api.github.com/repos/${owner}/${name}/compare/${key}`, {
+          headers: { authorization: `bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "m2-pr-task-force" },
+        });
+        out[key] = res.ok ? (await res.json()).files.map((f) => ({ filename: f.filename, changes: f.changes })) : null;
+      }),
+    );
   }
   return out;
 }

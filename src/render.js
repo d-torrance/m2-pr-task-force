@@ -130,6 +130,13 @@ tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 3.5%, transp
 /* Past the stalled line: the same status hue as the histogram's last band, which it counts. */
 .col-wait.stalled { color: var(--serious); font-weight: 620; }
 .turn-author { color: var(--text-muted); font-style: italic; }
+/* A name that opens the reviewer's page: the name's own ink, so bold and grey still read as
+   they do everywhere else, and an underline only on hover. */
+a.rv-name, .w-name a { color: inherit; text-decoration: none; }
+a.rv-name:hover, .w-name a:hover { text-decoration: underline; }
+.back { margin: 20px 0 0; font-size: 13px; }
+.col-status, .col-score { white-space: nowrap; }
+.col-score { width: 1%; }
 .col-labels { min-width: 150px; }
 .col-revs { min-width: 220px; }
 
@@ -378,6 +385,46 @@ export function render(data) {
         <tbody id="w-body"></tbody>
       </table>
     </div>
+  </section>
+</div>
+
+<div id="panel-reviewer" role="tabpanel" hidden>
+  <p class="back"><a href="#">← All open pull requests</a></p>
+  <div class="kpis">
+    <div class="kpi"><div class="v num" id="rv-first">–</div><div class="k">awaiting first review</div></div>
+    <div class="kpi"><div class="v num" id="rv-followup">–</div><div class="k">awaiting follow-up review</div></div>
+    <div class="kpi"><div class="v num" id="rv-author">–</div><div class="k">waiting on author</div></div>
+    <div class="kpi"><div class="v num" id="rv-blocked">–</div><div class="k">waiting for another PR</div></div>
+  </div>
+
+  <section>
+    <div class="head">
+      <h2>Task force reviews for <span id="rv-login"></span></h2>
+      <span class="note">their move first, the most pressing at the top, then the PRs waiting on
+        their authors, then those waiting on another PR</span>
+    </div>
+    <div class="scroll">
+      <table id="rv-table">
+        <thead><tr>
+          <th>PR</th>
+          <th>Status</th>
+          <th title="Days waiting, plus one, over the estimated hours to review: quick reviews and long waits come first">Score</th>
+          <th title="Days since it became this move">Waiting</th>
+          <th>Title</th>
+          <th>Labels</th>
+          <th>Updated</th>
+        </tr></thead>
+        <tbody id="rv-body"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="rv-empty" hidden>No open pull requests on which the task force has picked this reviewer.</div>
+    <figure class="chart">
+      <p class="cap">The score is the days waiting, plus one, over the estimated hours to review:
+        a quarter of an hour to get going, and 300 lines an hour. A quick review jumps ahead, but
+        a big one's score keeps growing while it waits, so nothing starves. A follow-up counts
+        only what changed since the reviewer's last review. Sizes are capped at 1000 lines, and a
+        JSAG first review counts as the cap whatever the diff, since it covers the whole package.</p>
+    </figure>
   </section>
 </div>
 

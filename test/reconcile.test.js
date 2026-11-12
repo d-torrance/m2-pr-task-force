@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { reconcile, replayAssignments } from "../src/reconcile.js";
+import { comparisons, reconcile, replayAssignments } from "../src/reconcile.js";
 
 const raw = JSON.parse(await readFile(new URL("./fixture.json", import.meta.url), "utf8"));
 const opts = { me: "me", repo: "acme/widgets", generatedAt: "2026-07-15T00:00:00Z" };
@@ -141,6 +141,32 @@ test("a pick who has answered everything reads as zero -- present, and free", ()
   // frank approved #102, so he owes nothing. He keeps his row: that is what capacity looks
   // like, and dropping him would hide the person most available to ask.
   assert.deepEqual(who("frank"), { login: "frank", waiting: 0, followup: 0, author: 0, total: 0 });
+});
+
+test("a PR waiting on another PR counts for nobody, but keeps its pick's row", () => {
+  const r = JSON.parse(JSON.stringify(raw));
+  r.open.find((p) => p.number === 106).labels.nodes.push({ name: "Waiting for another PR", color: "ededed" });
+  const d = reconcile({ ...r, since: "2026-04-15", months: 3 }, opts);
+  assert.deepEqual(d.open.workload.find((w) => w.login === "erin"), {
+    login: "erin",
+    waiting: 0,
+    followup: 0,
+    author: 0,
+    total: 0,
+  });
+});
+
+test("a PR waiting on another PR is no wait of the task force's", () => {
+  const r = JSON.parse(JSON.stringify(raw));
+  // #101 is the oldest wait, at 41 days.
+  r.open.find((p) => p.number === 101).labels.nodes.push({ name: "waiting for another PR", color: "ededed" });
+  const d = reconcile({ ...r, since: "2026-04-15", months: 3 }, opts);
+  assert.equal(d.open.prs.find((p) => p.number === 101).taskForce.kind, "blocked");
+  const tf = d.open.taskForce;
+  assert.equal(tf.waiting, data.open.taskForce.waiting - 1);
+  assert.equal(tf.prs, tf.waiting + tf.onAuthor + tf.done);
+  assert.equal(tf.oldestDays, 24);
+  assert.equal(d.open.stats.waitingMine, tf.waiting);
 });
 
 test("the gap numbers measure different things", () => {
@@ -343,6 +369,50 @@ test("a PR missing from the second fetch still gets a turn from what the first o
   assert.equal(raw.activity[101], undefined);
   assert.equal(pr(101).taskForce.kind, "first");
   assert.equal(pr(101).taskForce.since, "2026-06-04T00:00:00Z");
+});
+
+/* ------------------------------- review sizes -------------------------------- */
+
+// #103 with sizes: alice reviewed commit "aaa" on 07-01, and the author pushed "bbb" on 07-05.
+const sized = (compares) => {
+  const r = JSON.parse(JSON.stringify(raw));
+  Object.assign(r.activity[103], {
+    additions: 400,
+    deletions: 100,
+    headRefOid: "bbb",
+    files: { nodes: [{ path: "A.m2" }, { path: "B.m2" }] },
+  });
+  r.activity[103].reviews.nodes[0].commit = { oid: "aaa" };
+  Object.assign(r.activity[106], { additions: 30, deletions: 12 });
+  return { r, d: reconcile({ ...r, compares, since: "2026-04-15", months: 3 }, opts) };
+};
+const sizedRev = (d, n, login) => d.open.prs.find((p) => p.number === n).reviewers.find((x) => x.login === login);
+
+test("a first review reads the whole PR", () => {
+  assert.equal(sizedRev(sized({}).d, 106, "erin").lines, 42);
+});
+
+test("a follow-up reads only what changed in the PR's own files since the reviewed commit", () => {
+  const { r, d } = sized({
+    "aaa...bbb": [
+      { filename: "A.m2", changes: 20 },
+      // Brought in by a merge of the base branch: not the PR's, so not to review.
+      { filename: "Other.m2", changes: 900 },
+    ],
+  });
+  assert.deepEqual(comparisons(r.open, r.activity, { me: "me" }), ["aaa...bbb"]);
+  assert.equal(sizedRev(d, 103, "alice").lines, 20);
+});
+
+test("a follow-up GitHub could not compare reads the whole PR", () => {
+  assert.equal(sizedRev(sized({ "aaa...bbb": null }).d, 103, "alice").lines, 500);
+});
+
+test("a follow-up with nothing pushed since the last review has nothing new to read", () => {
+  const { d } = sized({});
+  // gina reviewed #108 on 07-03 and nothing has been pushed since.
+  assert.equal(sizedRev(d, 108, "gina").turn, "followup");
+  assert.equal(sizedRev(d, 108, "gina").lines, 0);
 });
 
 test("a PR with no task force pick has no turn", () => {

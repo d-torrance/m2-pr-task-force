@@ -129,6 +129,9 @@ function reviewersFor(pr, me, start) {
  * table meant for deciding who to ask next, on work nobody asked them for. Their reviews
  * still show on the PR rows, in grey. `TASK_FORCE_START` therefore moves rows here, as it
  * does everywhere else. Bots never rank, whoever requested them.
+ *
+ * A PR waiting on another PR counts for nobody: there is nothing to review on it yet, and a
+ * pick on one is as likely an accident as a plan. It still shows on the reviewer's page.
  */
 function workloadFrom(prs) {
   const byLogin = new Map();
@@ -138,11 +141,13 @@ function workloadFrom(prs) {
   };
 
   for (const pr of prs) {
+    const blocked = hasLabel(pr.labels, BLOCKED_LABEL);
     for (const r of pr.reviewers) {
       if (r.isBot || r.origin !== "mine") continue;
       // A pick whose every review is in gets a row at zero rather than none at all: that is
       // precisely "has capacity", which is the question this table exists to answer.
       const row = seen(r.login);
+      if (blocked) continue;
       if (r.turn === "first") row.waiting += 1;
       else if (r.turn === "followup") row.followup += 1;
       else if (r.turn === "author") row.author += 1;
@@ -228,10 +233,11 @@ const bandsOf = (values) =>
  * Counted per PR, matching the KPI row above it -- a PR with two picks owing a look is one PR
  * waiting -- and measured from the longest-waiting pick (see withTurns). A follow-up counts as
  * much as a first look: a pick who reviewed once and went quiet after the author answered is
- * the same stall, and counting only outstanding requests hid every one of them.
+ * the same stall, and counting only outstanding requests hid every one of them. A PR waiting
+ * on another PR is left out altogether, as it is of the workload and the triage number.
  */
 function openTaskForce(prs, now) {
-  const picked = prs.filter((pr) => pr.taskForce);
+  const picked = prs.filter((pr) => pr.taskForce && pr.taskForce.kind !== "blocked");
   const kind = (k) => picked.filter((pr) => pr.taskForce.kind === k).length;
   const waits = picked
     .filter((pr) => pr.taskForce.kind === "first" || pr.taskForce.kind === "followup")
@@ -441,19 +447,75 @@ function turnOf(pr, r, a, picks) {
 }
 
 /**
+ * The commits a follow-up compares, as a "base...head" key: the commit this reviewer last
+ * reviewed, and the PR's head now. Null when there is nothing to compare -- no review of theirs
+ * on a commit, or nothing pushed since -- or no second fetch to say.
+ */
+function compareKey(act, login) {
+  const reviewed = (act?.reviews.nodes ?? [])
+    .filter((v) => loginOf(v.author) === login && v.commit && v.submittedAt)
+    .sort((x, y) => x.submittedAt.localeCompare(y.submittedAt))
+    .at(-1);
+  if (!reviewed || !act.headRefOid || reviewed.commit.oid === act.headRefOid) return null;
+  return `${reviewed.commit.oid}...${act.headRefOid}`;
+}
+
+/**
+ * Every comparison the build should fetch (query.js fetchComparisons): one per task force pick
+ * with a reviewed commit behind the head. A pick whose turn turns out not to be a follow-up
+ * costs a request it did not need, which keeps this from having to know whose turn it is.
+ */
+export const comparisons = (rawPrs, activity, { me, start = null }) => [
+  ...new Set(
+    rawPrs
+      .filter(isReviewable)
+      .flatMap((pr) =>
+        reviewersFor(pr, me, start)
+          .filter((r) => r.origin === "mine" && !r.isBot)
+          .map((r) => compareKey(activity[pr.number], r.login)),
+      )
+      .filter(Boolean),
+  ),
+];
+
+/**
+ * How many lines a pick has to read: the whole PR for a first review, and for a follow-up only
+ * what changed in the PR's own files since the commit they last reviewed -- so a merge of the
+ * base branch does not count -- or nothing at all if nothing has been pushed since they last
+ * reviewed or commented. When GitHub could not compare the two, the whole PR. The same rule as
+ * `assigned.sh`, which orders a reviewer's queue by it. Null when the size is unknown.
+ */
+function linesFor(r, a, act, compares) {
+  if (!act) return null;
+  const whole = act.additions == null ? null : act.additions + act.deletions;
+  if (r.turn !== "followup") return whole;
+  const lastMine = latest(a.reviews.filter((v) => v.login === r.login && v.at >= r.assignedAt).map((v) => v.at));
+  const lastCommit = latest(act.commits.nodes.map((n) => n.commit.committedDate));
+  if (!(lastCommit > lastMine)) return 0;
+  const files = compares[compareKey(act, r.login)];
+  if (!files) return whole;
+  const mine = new Set(act.files.nodes.map((f) => f.path));
+  return files.filter((f) => mine.has(f.filename)).reduce((n, f) => n + f.changes, 0);
+}
+
+/**
  * Stamp each task force pick on an open PR with whose turn it is (see turnOf), and the PR with
  * the pick it has waited on longest. `taskForce` is null on a PR with no pick, and its `kind`
  * is "first" or "followup" while a pick owes a look, "author" when every pick still owing
- * something is waiting on the author, and "done" when they have all approved.
+ * something is waiting on the author, and "done" when they have all approved. A PR waiting on
+ * another PR is "blocked" whatever its picks owe: there is nothing to review on it yet, so it
+ * is no wait of the task force's (see openTaskForce), any more than a gap in its coverage.
  */
-function withTurns(pr, raw, act) {
+function withTurns(pr, raw, act, compares) {
   const picks = new Set(pr.reviewers.filter((r) => r.origin === "mine").map((r) => r.login));
   if (!picks.size) return { ...pr, taskForce: null };
 
   const a = activityOf(raw, act);
-  const reviewers = pr.reviewers.map((r) =>
-    r.origin !== "mine" || r.isBot || r.state === "APPROVED" ? r : { ...r, ...turnOf(raw, r, a, picks) },
-  );
+  const reviewers = pr.reviewers.map((r) => {
+    if (r.origin !== "mine" || r.isBot || r.state === "APPROVED") return r;
+    const t = { ...r, ...turnOf(raw, r, a, picks) };
+    return { ...t, lines: linesFor(t, a, act, compares) };
+  });
   const oldest = (turns) =>
     reviewers.filter((r) => turns.includes(r.turn)).sort((x, y) => x.turnSince.localeCompare(y.turnSince))[0];
   const owed = oldest(["first", "followup"]) ?? oldest(["author"]);
@@ -461,7 +523,7 @@ function withTurns(pr, raw, act) {
     ...pr,
     reviewers,
     taskForce: owed
-      ? { kind: owed.turn, reviewer: owed.login, since: owed.turnSince, story: owed.story }
+      ? { kind: hasLabel(pr.labels, BLOCKED_LABEL) ? "blocked" : owed.turn, reviewer: owed.login, since: owed.turnSince, story: owed.story }
       : { kind: "done", reviewer: null, since: null, story: null },
   };
 }
@@ -507,11 +569,12 @@ const shape = (pr, me, start) => ({
 /**
  * Open PRs -> table rows, reviewer workload, the gap numbers, and the wait times. `activity`
  * is the second fetch, keyed by PR number; a PR missing from it falls back (see activityOf).
+ * `compares` is the third, keyed by comparison (see comparisons).
  */
-function reconcileOpen(rawPrs, activity, me, start, now) {
+function reconcileOpen(rawPrs, activity, compares, me, start, now) {
   const prs = rawPrs
     .filter(isReviewable)
-    .map((pr) => withTurns(shape(pr, me, start), pr, activity[pr.number]))
+    .map((pr) => withTurns(shape(pr, me, start), pr, activity[pr.number], compares))
     .sort((a, b) => b.number - a.number);
 
   // Every KPI here counts PRs, not reviewer slots, so the headline numbers partition the
@@ -545,6 +608,7 @@ function reconcileOpen(rawPrs, activity, me, start, now) {
       // number GitHub shows for non-drafts, and this is the whole difference.
       drafts: prs.filter((p) => p.isDraft).length,
       draftLabel: REVIEW_READY_DRAFT_LABEL,
+      blockedLabel: BLOCKED_LABEL,
       // The task force's own inbox: PRs that have arrived since it began and that the
       // assigner has not put anybody on. Dated from the start deliberately -- the years of
       // backlog before it are a different problem, and burying this number in them hides the
@@ -609,10 +673,10 @@ function reconcileMerged(rawPrs, me, start, { since, months, now }) {
 
 /** Raw API nodes -> the full data model baked into the page. */
 export function reconcile(
-  { open: rawOpen, merged: rawMerged = [], activity = {}, since = null, months = 3 },
+  { open: rawOpen, merged: rawMerged = [], activity = {}, compares = {}, since = null, months = 3 },
   { me, repo, start = null, generatedAt = new Date().toISOString() },
 ) {
-  const open = reconcileOpen(rawOpen, activity, me, start, generatedAt);
+  const open = reconcileOpen(rawOpen, activity, compares, me, start, generatedAt);
   const merged = reconcileMerged(rawMerged, me, start, { since, months, now: generatedAt });
   return {
     generatedAt,

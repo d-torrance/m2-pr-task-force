@@ -80,6 +80,33 @@ free capacity looks like, and dropping it would hide the person most available t
 
 `TASK_FORCE_START` therefore moves rows here, as it does everywhere else.
 
+A PR labelled `waiting for another PR` counts for nobody: there is nothing to review on it until
+the other one lands, and a pick on one is as likely an accident as a plan. It still shows on the
+reviewer's page, last, under its own status.
+
+## A reviewer's page
+
+Every name on the open tab with a row in the workload table links to that reviewer's page
+(`#reviewer/<login>`): their task force queue, as `assigned.sh` prints it. It lists the same PRs
+as their workload row, in the order to review them. First come the PRs where it is their move,
+first reviews and follow-ups together, most pressing first. Then come the PRs waiting on their
+authors, and last the ones labelled `waiting for another PR`, which have nothing to review yet.
+Both of those groups put the longest wait first.
+
+Most pressing is Highest Response Ratio Next: (days waiting + 1) / estimated hours to review, at
+300 lines an hour plus a quarter of an hour to get going. A quick review jumps ahead, but a big
+one's score keeps growing while it waits, so nothing starves. A follow-up counts only the lines
+that changed in the PR's own files since the commit the reviewer last reviewed, so a merge of the
+base branch does not count, and it counts none at all if nothing has been pushed since. Sizes are
+capped at 1000 lines, since a big new package is padded with docs and data, and a JSAG first
+review counts as the cap whatever its diff: it covers the whole package.
+
+Sizing a follow-up takes a commit comparison, which GraphQL cannot do, so the build makes one
+REST call per pick whose last reviewed commit is behind the head. When GitHub cannot compare the
+two, for instance after a force-push, the follow-up is sized as the whole PR.
+
+The merged tab has no such links: a page for completed reviews is a different question.
+
 ## The triage number
 
 The open tab leads with **PRs opened since the start date that the assigner has not put anybody
@@ -135,6 +162,9 @@ shorter.
 
 Both tabs carry timing stats, scoped to the task force's own requests. The open tab's are waits
 on a pick, first looks and follow-ups alike, measured as in [whose turn it is](#whose-turn-it-is).
+PRs labelled `waiting for another PR` are left out, as they are of the workload table and the
+triage number: there is nothing to review on them yet. The PR table's **Waiting** column says
+*other PR* for them.
 Three deliberate choices:
 
 - **Median, never mean.** The waits are severely right-skewed — a request from this morning
@@ -203,8 +233,8 @@ generation time and flags a snapshot older than two days.
 | Path | |
 |---|---|
 | `build.js` | fetch → reconcile → render |
-| `src/query.js` | GraphQL documents, pagination, the author-activity fetch, token resolution |
-| `src/reconcile.js` | timeline replay, origins, whose turn it is, workload, wait times |
+| `src/query.js` | GraphQL documents, pagination, the author-activity fetch, commit comparisons, token resolution |
+| `src/reconcile.js` | timeline replay, origins, whose turn it is, review sizes, workload, wait times |
 | `src/render.js` | HTML + CSS shell |
 | `src/page.js` | client-side sort/filter, inlined into the page |
 | `test/` | attribution and timing tests over a synthetic fixture |

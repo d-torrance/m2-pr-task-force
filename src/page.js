@@ -80,7 +80,9 @@ function reviewerSpan(r, view) {
   // someone else" and would be a lie for a bot the assigner requested.
   const kind = r.isBot ? "machine" : r.origin === "mine" ? "mine" : "other";
   const n = el("span", `rv rv-${kind}`);
-  n.append(el("span", "rv-name", r.login));
+  // Anybody with a task force queue opens it, wherever their name appears on the open tab --
+  // grey here too, since being somebody else's reviewer on this PR does not empty it.
+  n.append(view === VIEWS.open && hasQueue(r.login) ? reviewerLink(r.login, "rv-name") : el("span", "rv-name", r.login));
   if (r.isBot) n.append(el("span", "rv-bot", "bot"));
   if (r.state !== "PENDING" || view === VIEWS.merged) {
     n.append(el("span", `badge ${STATE_CLASS[r.state] ?? "st-mute"}`, view.stateLabel(r.state)));
@@ -106,6 +108,15 @@ const TURN_WORDS = {
   first: "Owes a first review",
   followup: "Owes a follow-up review",
   author: "Waiting on the author",
+  blocked: "Waiting for another PR",
+};
+
+// The reviewers with a page: exactly the rows of the workload table.
+const hasQueue = (login) => DATA.open.workload.some((w) => w.login === login);
+const reviewerLink = (login, cls) => {
+  const a = el("a", cls, login);
+  a.href = `#reviewer/${encodeURIComponent(login)}`;
+  return a;
 };
 const owesLook = (t) => t?.kind === "first" || t?.kind === "followup";
 
@@ -120,9 +131,9 @@ function waitCell(pr) {
     td.textContent = `${d}d`;
     if (d >= DATA.open.taskForce.stalledDays) td.classList.add("stalled");
     td.title = `${TURN_WORDS[t.kind]} from ${t.reviewer}: ${t.story}`;
-  } else if (t?.kind === "author") {
-    td.append(el("span", "turn-author", "author"));
-    td.title = `${TURN_WORDS.author}: ${t.story}`;
+  } else if (t?.kind === "author" || t?.kind === "blocked") {
+    td.append(el("span", "turn-author", t.kind === "author" ? "author" : "other PR"));
+    td.title = `${TURN_WORDS[t.kind]}: ${t.story}`;
   } else {
     td.textContent = "—";
     td.title = t ? "Every task force selection has approved" : "No task force selection";
@@ -130,9 +141,7 @@ function waitCell(pr) {
   return td;
 }
 
-function prRow(pr, view) {
-  const tr = el("tr");
-
+function numCell(pr) {
   const num = el("td", "col-num");
   const a = el("a", "prnum", `#${pr.number}`);
   a.href = pr.url;
@@ -145,10 +154,16 @@ function prRow(pr, view) {
     d.title = "Draft — listed because it is labelled for review";
     num.append(d);
   }
+  return num;
+}
 
+function titleCell(pr) {
   const title = el("td", "col-title", pr.title);
   title.title = pr.title;
+  return title;
+}
 
+function labelsCell(pr) {
   const labels = el("td", "col-labels");
   for (const l of pr.labels) {
     const chip = el("span", "chip");
@@ -159,7 +174,17 @@ function prRow(pr, view) {
     chip.append(dot, el("span", null, l.name));
     labels.append(chip);
   }
+  return labels;
+}
 
+const updatedCell = (iso) => {
+  const td = el("td", "col-upd num", ago(iso));
+  td.title = iso ?? "";
+  return td;
+};
+
+function prRow(pr, view) {
+  const tr = el("tr");
   const revs = el("td", "col-revs");
   if (pr.reviewers.length === 0) {
     revs.append(el("span", "none", view === VIEWS.merged ? "nobody reviewed" : "nobody assigned"));
@@ -169,12 +194,10 @@ function prRow(pr, view) {
 
   const age = el("td", "col-age num", ago(pr.createdAt));
   age.title = pr.createdAt;
-  const tail = el("td", "col-upd num", ago(view.tail(pr)));
-  tail.title = view.tail(pr) ?? "";
 
-  tr.append(num, title, el("td", "col-author", pr.author), labels, revs);
+  tr.append(numCell(pr), titleCell(pr), el("td", "col-author", pr.author), labelsCell(pr), revs);
   if (view.waiting) tr.append(waitCell(pr));
-  tr.append(age, tail);
+  tr.append(age, updatedCell(view.tail(pr)));
   return tr;
 }
 
@@ -187,8 +210,10 @@ const PR_KEY = {
   labels: (p) => p.labels.length,
   reviewers: (p) => p.reviewers.length,
   age: (p) => Date.parse(p.createdAt),
-  // Longest wait first when descending; then PRs on the author, then everything else.
-  wait: (p) => (owesLook(p.taskForce) ? Date.now() - Date.parse(p.taskForce.since) : p.taskForce?.kind === "author" ? -1 : -2),
+  // Longest wait first when descending; then PRs on the author, then on another PR, then
+  // everything else.
+  wait: (p) =>
+    owesLook(p.taskForce) ? Date.now() - Date.parse(p.taskForce.since) : ({ author: -1, blocked: -2 }[p.taskForce?.kind] ?? -3),
 };
 
 function visiblePrs(view, st) {
@@ -393,7 +418,7 @@ function bar(value, max, segments) {
 
 // `cols` is the column order after the reviewer name; the one marked `bar` gets the bar,
 // so a table can lead with its total and keep the breakdown beside it.
-function drawTable({ table, body, rows, sortKey, dir, keys, cols }) {
+function drawTable({ table, body, rows, sortKey, dir, keys, cols, link = false }) {
   const sorted = [...rows].sort((a, b) => {
     const x = keys[sortKey](a);
     const y = keys[sortKey](b);
@@ -404,7 +429,9 @@ function drawTable({ table, body, rows, sortKey, dir, keys, cols }) {
   $(body).replaceChildren(
     ...sorted.map((r) => {
       const tr = el("tr");
-      tr.append(el("td", "w-name", r.login));
+      const name = el("td", "w-name");
+      name.append(link ? reviewerLink(r.login) : r.login);
+      tr.append(name);
       for (const c of cols) {
         tr.append(c.bar ? bar(r[c.key], max, c.segments?.(r)) : el("td", "num dim", String(r[c.key])));
       }
@@ -424,6 +451,7 @@ const drawWorkload = () =>
     rows: DATA.open.workload,
     sortKey: state.wsort,
     dir: state.wdir,
+    link: true,
     keys: {
       reviewer: (r) => r.login.toLowerCase(),
       total: (r) => r.total,
@@ -463,6 +491,84 @@ const drawApprovals = () =>
     },
     cols: [{ key: "approved", bar: true }, { key: "mine" }],
   });
+
+/* -------------------------------- Reviewer page -------------------------------- */
+
+// The order to review in, as `assigned.sh` prints it. Highest Response Ratio Next: days waiting
+// plus one, over the estimated hours to review -- a quarter of an hour to get going and 300
+// lines an hour, with the size capped at 1000 lines, and a JSAG first review counted as the cap
+// whatever its diff, since it covers the whole package. Keep the two in step.
+const LINES_PER_HOUR = 300;
+const MAX_LINES = 1000;
+const isJsag = (pr) => pr.labels.some((l) => l.name.toLowerCase() === DATA.open.stats.draftLabel.toLowerCase());
+const reviewSize = (pr, r) => (isJsag(pr) && r.turn !== "followup" ? MAX_LINES : Math.min(r.lines ?? 0, MAX_LINES));
+const score = (pr, r) => ((Date.now() - Date.parse(r.turnSince)) / DAY + 1) / (0.25 + reviewSize(pr, r) / LINES_PER_HOUR);
+
+function scoreCell(row) {
+  const td = el("td", "col-score num");
+  if (row.score == null) return td;
+  td.textContent = String(Math.round(row.score * 10) / 10);
+  const { pr, r } = row;
+  td.title =
+    r.lines == null
+      ? "Size unknown, so counted as nothing to read"
+      : isJsag(pr) && r.turn !== "followup"
+        ? `JSAG: the whole package, counted as ${MAX_LINES} lines`
+        : r.turn === "followup"
+          ? `${plural(r.lines, "line", "lines")} changed since ${r.login}'s last review`
+          : plural(r.lines, "line", "lines");
+  return td;
+}
+
+// A pick on a PR parked behind another one has nothing to review yet, whoever's move it would
+// otherwise be: it goes to the bottom, under its own name.
+const isBlocked = (pr) => pr.labels.some((l) => l.name.toLowerCase() === DATA.open.stats.blockedLabel.toLowerCase());
+
+function drawReviewer(login) {
+  const rows = DATA.open.prs.flatMap((pr) =>
+    pr.reviewers
+      .filter((r) => r.login === login && r.turn)
+      .map((r) => {
+        const status = isBlocked(pr) ? "blocked" : r.turn;
+        const mine = status === "first" || status === "followup";
+        return { pr, r, status, score: mine ? score(pr, r) : null };
+      }),
+  );
+  const group = { first: 0, followup: 0, author: 1, blocked: 2 };
+  rows.sort(
+    (a, b) =>
+      group[a.status] - group[b.status] ||
+      (b.score ?? 0) - (a.score ?? 0) ||
+      a.r.turnSince.localeCompare(b.r.turnSince),
+  );
+
+  $("#rv-login").textContent = login;
+  document.title = `${login} — ${DATA.repo} PR Task Force`;
+  for (const k of ["first", "followup", "author", "blocked"]) {
+    $(`#rv-${k}`).textContent = rows.filter((x) => x.status === k).length;
+  }
+  $("#rv-body").replaceChildren(
+    ...rows.map((row) => {
+      const { pr, r, status } = row;
+      const tr = el("tr");
+      const words = {
+        first: "awaiting first review",
+        followup: "awaiting follow-up review",
+        author: "waiting on author",
+        blocked: "waiting for another PR",
+      }[status];
+      const st = el("td", "col-status");
+      st.append(el("span", status === "author" || status === "blocked" ? "turn-author" : null, words));
+      const d = days(r.turnSince);
+      const wait = el("td", "col-wait num", `${d}d`);
+      if (row.score != null && d >= DATA.open.taskForce.stalledDays) wait.classList.add("stalled");
+      wait.title = `${TURN_WORDS[status]}: ${r.story}`;
+      tr.append(numCell(pr), st, scoreCell(row), wait, titleCell(pr), labelsCell(pr), updatedCell(pr.updatedAt));
+      return tr;
+    }),
+  );
+  $("#rv-empty").hidden = rows.length > 0;
+}
 
 /* ---------------------------------- Controls ---------------------------------- */
 
@@ -509,20 +615,36 @@ function wireFilters(key) {
   }
 }
 
+// A reviewer's page belongs to the open tab, so that tab stays selected while it shows. It is
+// reached by a link, unlike the tabs, so the back button returns from it.
+function showPanel(panel, tab) {
+  for (const p of ["open", "merged", "reviewer"]) $(`#panel-${p}`).hidden = p !== panel;
+  for (const btn of document.querySelectorAll("[data-tab]")) {
+    btn.setAttribute("aria-selected", String(btn.dataset.tab === tab));
+  }
+}
+
 function showTab(key) {
   state.tab = key;
-  for (const btn of document.querySelectorAll("[data-tab]")) {
-    const on = btn.dataset.tab === key;
-    btn.setAttribute("aria-selected", String(on));
-    $(`#panel-${btn.dataset.tab}`).hidden = !on;
-  }
+  showPanel(key, key);
+  document.title = `${DATA.repo} PR Task Force`;
   history.replaceState(null, "", key === "open" ? location.pathname : `#${key}`);
+}
+
+function route() {
+  const m = location.hash.match(/^#reviewer\/(.+)$/);
+  if (m) {
+    drawReviewer(decodeURIComponent(m[1]));
+    showPanel("reviewer", "open");
+    window.scrollTo(0, 0);
+  } else {
+    showTab(location.hash === "#merged" ? "merged" : "open");
+  }
 }
 
 function init() {
   $("#repo").textContent = DATA.repo;
   $("#repo").href = `https://github.com/${DATA.repo}`;
-  document.title = `${DATA.repo} PR Task Force`;
 
   // This page is public, so it names the assigner rather than addressing a "you" that most
   // readers aren't. The name comes from the data, since TASK_FORCE_ASSIGNER is configurable.
@@ -592,7 +714,8 @@ function init() {
   drawApprovals();
   drawPrs("open");
   drawPrs("merged");
-  showTab(location.hash === "#merged" ? "merged" : "open");
+  window.addEventListener("hashchange", route);
+  route();
 }
 
 init();
