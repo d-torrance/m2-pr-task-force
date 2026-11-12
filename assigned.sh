@@ -22,7 +22,10 @@ A task force pick is a review request made by the task force, set by the environ
   TASK_FORCE_ASSIGNER  whose review requests count (default d-torrance)
   TASK_FORCE_START     ignore requests before this date (default 2026-07-06)
 
-Needs the GitHub CLI, gh, installed and authenticated.
+The table puts the reviewer's move first, quick reviews and long waits ahead (the SCORE
+column), and the PRs waiting on their authors, then those waiting on another PR, last.
+
+Needs jq and the GitHub CLI, gh, installed and authenticated.
 EOF
 }
 
@@ -144,15 +147,18 @@ query($q: String!) {
   search(query: $q, type: ISSUE, first: 100) {
     nodes {
       ... on PullRequest {
-        number url title createdAt updatedAt isDraft
+        number url title createdAt updatedAt isDraft additions deletions headRefOid
         author { login }
         labels(first: 50) { nodes { name } }
+        files(first: 100) { nodes { path } }
         commits(last: 1) { nodes { commit { committedDate } } }
         comments(last: 100) { nodes { author { __typename login } createdAt } }
         reviewRequests(first: 30) {
           nodes { requestedReviewer { __typename ... on User { login } } }
         }
-        reviews(first: 100) { nodes { author { __typename login } state submittedAt } }
+        reviews(first: 100) {
+          nodes { author { __typename login } state submittedAt commit { oid } }
+        }
         timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT], first: 100) {
           nodes {
             __typename
@@ -226,7 +232,16 @@ def picks:
     # dismissal. An approval is not one: it leaves the author nothing to answer.
     | ([$reviews[] | select(.state != "APPROVED")] | last) as $last_demand
     | { at: $pick.at, text: "picked \($pick.at | date)" } as $picked_event
-    | { number, url, title, updatedAt, labels: [.labels.nodes[].name] }
+    # What a follow-up has to read: the commit this reviewer last reviewed, and whether
+    # anything has been pushed since they last reviewed or commented.
+    | ([$mine[] | select(.submittedAt >= $pick.at) | .submittedAt] | max) as $last_mine
+    | { number, url, title, updatedAt, labels: [.labels.nodes[].name],
+        additions, deletions, head: .headRefOid, files: [.files.nodes[].path],
+        base: ([.reviews.nodes[] | select(.author.login == me and .commit != null
+                                          and .submittedAt != null)]
+               | max_by(.submittedAt) | .commit.oid),
+        pushed: ($last_mine != null
+                 and ([.commits.nodes[].commit.committedDate] | max) > $last_mine) }
       + if $last_demand != null
            and $last_demand.submittedAt > $author_at
            and $last_demand.submittedAt > $pick.at then
@@ -279,6 +294,9 @@ def picks:
               # the count is what it is -- an old PR freshly picked is not an old wait.
               why: ([$story.events | sort_by(.at)[] | .text] + [$story.tail] | join(", ")) }
         end
+    # A PR parked behind another one has nothing to review yet, whoever's move it would be.
+    | if any(.labels[]; ascii_downcase == "waiting for another pr") then .turn = "blocked"
+      else . end
     | . + { waited: (.since | age) } ];
 JQ
 )
@@ -293,9 +311,10 @@ task_force() {
 if $summary; then
   # The long waits as prose, for an email. Plain text and no color: the table is for a
   # terminal, this is for somebody who will read it in a mail client. Only the reviewer's own
-  # move counts here -- nudging somebody about a PR that is waiting on its author helps nobody.
+  # move counts here -- nudging somebody about a PR that is waiting on its author, or on
+  # another PR, helps nobody.
   task_force '
-    [ picks[] | select(.turn != "author" and .waited >= days) ]
+    [ picks[] | select((.turn == "first" or .turn == "followup") and .waited >= days) ]
     | sort_by(-.waited)
     | if length == 0 then
         "Nothing in the review queue for \(me) has been waiting \(plural(days; "day")) or more."
@@ -308,26 +327,65 @@ if $summary; then
   exit 0
 fi
 
-# The table, in the website's order of stages: the reviewer's move first -- a first review,
-# then a follow-up -- and the author's last, longest wait first within each. The first line
-# out is the PR numbers, for --all to leave out of its tables; it is not printed.
-out=$(task_force '
-  (picks | sort_by(({first: 0, followup: 1, author: 2}[.turn]), -.waited)) as $rows
+rows=$(task_force picks)
+
+# What changed in each follow-up since the commit the reviewer last reviewed, file by file.
+# Not a GraphQL field, so one compare per follow-up with something new pushed; one GitHub
+# cannot make (the commit was force-pushed away, say) is left out, and the PR counts whole.
+changed={}
+while read -r number base head; do
+  if files=$(gh api "repos/Macaulay2/M2/compare/$base...$head" \
+                --jq '[.files[] | {filename, changes}]' 2>/dev/null); then
+    changed=$(jq -c --arg n "$number" --argjson f "$files" '. + {($n): $f}' <<<"$changed")
+  fi
+done < <(jq -r '.[] | select(.turn == "followup" and .pushed and .base != null)
+                | "\(.number) \(.base) \(.head)"' <<<"$rows")
+
+# The table: the reviewer's move first, most pressing first, then the PRs waiting on their
+# authors, then those waiting on another PR, longest wait first within each. Most pressing is Highest Response Ratio Next: (days waiting +
+# 1) / estimated hours to review, at 300 lines an hour plus a quarter of an hour to get going.
+# A quick review jumps ahead, but a big one's score keeps growing while it waits, so nothing
+# starves. A follow-up counts only the lines changed since the reviewer's last review, in the
+# PR's own files, so a merge of the base branch does not count, and none at all if nothing
+# was pushed. Sizes are capped at 1000 lines, since a big new package is padded with docs and
+# data, and a JSAG first review counts as the cap whatever the diff: it covers the whole
+# package. The first line out is the PR numbers, for --all to leave out of its tables; it is
+# not printed.
+out=$(jq -r --argjson changed "$changed" "$defs $common"'
+  def lines:
+    (.number | tostring) as $n
+    | if .turn != "followup" then .additions + .deletions
+      elif .pushed | not then 0
+      elif $changed[$n] == null then .additions + .deletions
+      else . as $pr
+        | [$changed[$n][] | select(.filename as $f | any($pr.files[]; . == $f)) | .changes]
+        | add // 0
+      end;
+  def score:
+    (if .turn != "followup" and any(.labels[]; ascii_downcase == "jsag") then 1000
+     else [lines, 1000] | min end) as $size
+    | ((now - (.since | fromdateiso8601)) / 86400 + 1) / (0.25 + $size / 300);
+  ((map(select(.turn == "first" or .turn == "followup") | . + {score: score})
+    | sort_by(-.score))
+   + (map(select(.turn == "author")) | sort_by(-.waited))
+   + (map(select(.turn == "blocked")) | sort_by(-.waited))) as $rows
   | ([$rows[].number] | join(" ")),
     table("Task force reviews for \(me)";
-          ["ID", "STATUS", "WAITING", "TITLE", "LABELS", "UPDATED"];
+          ["ID", "STATUS", "SCORE", "WAITING", "TITLE", "LABELS", "UPDATED"];
           [ $rows[]
             | { cells: [ "#\(.number)",
                          {first: "awaiting first review",
                           followup: "awaiting follow-up review",
-                          author: "waiting on author"}[.turn],
+                          author: "waiting on author",
+                          blocked: "waiting for another PR"}[.turn],
+                         (if .score then .score * 10 | round / 10 | tostring else "" end),
                          "\(.waited)d",
                          (.title | cut(50)),
                          (.labels | join(", ") | cut(40)),
                          (.updatedAt | ago) ],
-                color: {first: "34", followup: "36", author: "90"}[.turn],
+                color: {first: "34", followup: "36", author: "90", blocked: "90"}[.turn],
                 url } ])
-    + (if $rows == [] then "\n(none)" else "" end)')
+    + (if $rows == [] then "\n(none)" else "" end)' <<<"$rows")
 pick_numbers=$(head -n 1 <<<"$out")
 tail -n +2 <<<"$out"
 
