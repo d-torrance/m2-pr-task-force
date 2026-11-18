@@ -358,6 +358,17 @@ test("a reviewer's comment is a review: it hands the PR back to the author", () 
   assert.equal(p.taskForce.story, "picked 2026-06-11, alice commented 2026-07-14, author has not responded");
   // A bot's comment is not somebody handing the PR back.
   assert.equal(commented({ __typename: "Bot", login: "github-actions" }).taskForce.kind, "followup");
+  // Nor is one from somebody who isn't reviewing: that's conversation (M2#4806).
+  assert.equal(commented({ __typename: "User", login: "bystander" }).taskForce.kind, "followup");
+});
+
+test("a reviewer's approval settles what they raised before it", () => {
+  const r = JSON.parse(JSON.stringify(raw));
+  const alice = { __typename: "User", login: "alice" };
+  r.activity[103].comments.nodes.push({ author: alice, createdAt: "2026-07-14T00:00:00Z" });
+  r.activity[103].reviews.nodes.push({ state: "APPROVED", submittedAt: "2026-07-15T00:00:00Z", author: alice });
+  const p = reconcile({ ...r, since: "2026-04-15", months: 3 }, opts).open.prs.find((x) => x.number === 103);
+  assert.equal(p.taskForce.kind, "followup");
 });
 
 test("a bot review does not hand the PR to the author", () => {

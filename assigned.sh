@@ -128,9 +128,12 @@ JQ
 # answers -- pushing, commenting, or reviewing their own PR -- the move is back with the
 # reviewers, and the wait runs from that first answer. Later comments do not restart it, or an
 # author pinging for news would make the wait look fresh; a later push does, since until it
-# lands there may be nothing new to review. A comment on the conversation from anybody but the
-# author is a review too: answering the author there hands the PR back just as surely. Bot
-# reviews and comments do not count.
+# lands there may be nothing new to review. A comment on the conversation from a reviewer
+# (somebody asked for a review or who has submitted one) is a review too: answering the
+# author there hands the PR back just as surely. Anybody else commenting is conversation, not a
+# review (a co-maintainer chatting about a future feature parked M2#4806 on the author's
+# side). A reviewer's approval settles whatever they raised before it. Bot reviews and comments
+# do not count.
 #
 # An approval by somebody else asks the author for nothing, so it leaves the move where it
 # was: if this reviewer has not been back since one landed, their sign-off is what the PR is
@@ -184,10 +187,20 @@ def picks:
   [ .data.search.nodes[]
     | select(reviewable)
     | . as $pr
+    | ([ (.reviewRequests.nodes[].requestedReviewer.login),
+         (.reviews.nodes[] | select(.submittedAt != null) | .author.login) ]) as $reviewing
     | ([ (.reviews.nodes[] | select(.submittedAt != null)),
-         (.comments.nodes[] | { author, state: "COMMENTED", submittedAt: .createdAt, comment: true }) ]
+         (.comments.nodes[] | select(.author.login as $who | any($reviewing[]; . == $who))
+          | { author, state: "COMMENTED", submittedAt: .createdAt, comment: true }) ]
        | map(select(.author.login != $pr.author.login and .author.__typename != "Bot"))
-       | sort_by(.submittedAt)) as $reviews
+       | sort_by(.submittedAt)
+       # What asks the author for something: anything but an approval, unless the same
+       # reviewer has approved since.
+       | . as $all
+       | map(. + { demand: (.state != "APPROVED"
+                             and (.author.login as $who | .submittedAt as $at
+                                  | any($all[]; .author.login == $who and .state == "APPROVED"
+                                                and .submittedAt > $at) | not)) })) as $reviews
     | ([$reviews[] | select(.author.login == me)] | sort_by(.submittedAt)) as $mine
     | ([$mine[] | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")]
         | last | .state // "") as $decision
@@ -224,13 +237,13 @@ def picks:
     | [$reviews[] | select(.author.login as $who | any($picked[]; . == $who))] as $tf_reviews
     | ($tf_reviews | last) as $last_review
     # The pick review the author was asked to answer, and any pick approval that came after.
-    | ([$tf_reviews[] | select(.state != "APPROVED")] | last) as $tf_demand
+    | ([$tf_reviews[] | select(.demand)] | last) as $tf_demand
     | ([$tf_reviews[] | select(.state == "APPROVED"
                                and .submittedAt > ($tf_demand.submittedAt // ""))] | last)
         as $tf_approval
     # A review that asks the author for something -- a comment, changes requested, a
     # dismissal. An approval is not one: it leaves the author nothing to answer.
-    | ([$reviews[] | select(.state != "APPROVED")] | last) as $last_demand
+    | ([$reviews[] | select(.demand)] | last) as $last_demand
     | { at: $pick.at, text: "picked \($pick.at | date)" } as $picked_event
     # What a follow-up has to read: the commit this reviewer last reviewed, and whether
     # anything has been pushed since they last reviewed or commented.

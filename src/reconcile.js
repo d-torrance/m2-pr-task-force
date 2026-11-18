@@ -330,27 +330,45 @@ const day = (iso) => iso.slice(0, 10);
  * what the first fetch has -- enough to run, but blind to anything the author did.
  *
  * A comment on the conversation counts as a COMMENTED review: a reviewer who answers the
- * author there has handed the PR back just as surely as one who submits a review.
+ * author there has handed the PR back just as surely as one who submits a review. Only a
+ * reviewer's, though -- somebody asked for a review or who has submitted one. Anybody else
+ * commenting is conversation, not a review: a co-maintainer of the package chatting with a
+ * reviewer about a future feature left the PR on the author's side while nobody was waiting
+ * on the author (M2#4806).
+ *
+ * `demand` marks what asks the author for something: anything but an approval, unless the
+ * same reviewer has approved since. Their approval says whatever they raised is settled, so
+ * a reviewer who comments and then approves leaves the author nothing to answer.
  *
  * Bot reviews and comments are left out: a bot asking the author for something is not a reviewer handing
  * the PR back, and counting it would park every PR Copilot touched on the author's side.
  */
 function activityOf(pr, act) {
   const author = loginOf(pr.author);
-  const reviews = (act?.reviews.nodes ?? pr.latestReviews.nodes)
+  const formal = (act?.reviews.nodes ?? pr.latestReviews.nodes)
     // A review still in draft has no submittedAt, and nobody else can see it yet.
     .filter((v) => v.submittedAt && v.state !== "PENDING")
-    .map((v) => ({ login: loginOf(v.author), isBot: v.author?.__typename === "Bot", state: v.state, at: v.submittedAt }))
+    .map((v) => ({ login: loginOf(v.author), isBot: v.author?.__typename === "Bot", state: v.state, at: v.submittedAt }));
+  const reviewing = new Set([
+    ...pr.reviewRequests.nodes.map((n) => loginOf(n.requestedReviewer)),
+    ...formal.map((v) => v.login),
+  ]);
+  const reviews = formal
     .concat(
-      (act?.comments.nodes ?? []).map((c) => ({
-        login: loginOf(c.author),
-        isBot: c.author?.__typename === "Bot",
-        state: "COMMENTED",
-        comment: true,
-        at: c.createdAt,
-      })),
+      (act?.comments.nodes ?? [])
+        .filter((c) => loginOf(c.author) === author || reviewing.has(loginOf(c.author)))
+        .map((c) => ({
+          login: loginOf(c.author),
+          isBot: c.author?.__typename === "Bot",
+          state: "COMMENTED",
+          comment: true,
+          at: c.createdAt,
+        })),
     )
     .sort((a, b) => a.at.localeCompare(b.at));
+  for (const v of reviews) {
+    v.demand = v.state !== "APPROVED" && !reviews.some((w) => w.login === v.login && w.state === "APPROVED" && w.at > v.at);
+  }
   // Opening the PR counts as its first push.
   const lastPush = latest([pr.createdAt, ...(act?.commits.nodes ?? []).map((n) => n.commit.committedDate)]);
   // Everything the author has done: comments, and review-thread replies of their own.
@@ -387,7 +405,7 @@ function turnOf(pr, r, a, picks) {
     const later = a.authorActs.filter((x) => x > t);
     return later.length ? earliest(later) : null;
   };
-  const lastDemand = a.reviews.filter((v) => v.state !== "APPROVED").at(-1);
+  const lastDemand = a.reviews.filter((v) => v.demand).at(-1);
 
   const ev = (at, text) => ({ at, text });
   const said = (v) => ev(v.at, `${v.login} ${v.comment ? "commented" : "reviewed"} ${day(v.at)}`);
@@ -411,7 +429,7 @@ function turnOf(pr, r, a, picks) {
   const since = latest([pickAt, answered, a.lastPush]);
 
   const tf = a.reviews.filter((v) => picks.has(v.login));
-  const tfDemand = tf.filter((v) => v.state !== "APPROVED").at(-1);
+  const tfDemand = tf.filter((v) => v.demand).at(-1);
   const tfApproval = tf.filter((v) => v.state === "APPROVED" && v.login !== r.login && (!tfDemand || v.at > tfDemand.at)).at(-1);
   // A push only earns a mention when it is what started the clock.
   const pushed = since === a.lastPush && a.lastPush > pr.createdAt ? [ev(a.lastPush, `last pushed ${day(a.lastPush)}`)] : [];
